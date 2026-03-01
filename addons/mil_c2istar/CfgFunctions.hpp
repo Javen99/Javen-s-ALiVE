@@ -231,6 +231,11 @@ class CfgFunctions {
                 file = "\x\alive\addons\mil_C2ISTAR\utils\fnc_taskGetInsurgencyLocation.sqf";
                 RECOMPILE;
             };
+            class taskSelectFromCommanderAssessment {
+                description = "Utility select a task from commander battlefield assessment";
+                file = "\x\alive\addons\mil_C2ISTAR\utils\fnc_taskSelectFromCommanderAssessment.sqf";
+                RECOMPILE;
+            };
             class taskMilAssault {
                 description = "Task Mil Assault";
                 file = "\x\alive\addons\mil_C2ISTAR\tasks\fnc_taskMilAssault.sqf";
