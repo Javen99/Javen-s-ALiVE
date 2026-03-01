@@ -440,11 +440,21 @@ class FSM
                          "                    case (""defend"") : {" \n
                          "                        [_target,""opcom_state"",""defending""] call AliVE_fnc_HashSet;" \n
                          "" \n
+                         "                        if ([_side,[""defending""]] call ALIVE_fnc_OPCOMgetHighestPrioObjective == _targetId) then {" \n
+                         "                            _targets = [_pos, 300, [_enemySide,""entity""],true] call ALIVE_fnc_getNearProfiles;" \n
+                         "                            [_side,_faction,""MilDefence"",_targets,""OPCOM"",true] call ALiVE_fnc_taskRequest;" \n
+                         "                        };" \n
+                         "" \n
                          "                        //Trigger new OPCOM analysis after TACOM confirmation including TACOMs answer" \n
                          "                        _OPCOM_DATA = [""analyze"",nil];" \n
                          "                    };" \n
                          "                    case (""reserve"") : {" \n
                          "                        [_target,""opcom_state"",""reserving""] call AliVE_fnc_HashSet;" \n
+                         "" \n
+                         "                        if ([_side,[""reserving""]] call ALIVE_fnc_OPCOMgetHighestPrioObjective == _targetId) then {" \n
+                         "                            _targets = [_pos, 300, [_enemySide,""entity""],true] call ALIVE_fnc_getNearProfiles;" \n
+                         "                            [_side,_faction,""MilDefence"",_targets,""OPCOM"",true] call ALiVE_fnc_taskRequest;" \n
+                         "                        };" \n
                          "" \n
                          "                        //Trigger new OPCOM analysis after TACOM confirmation including TACOMs answer" \n
                          "                        _OPCOM_DATA = [""analyze"",nil];" \n
