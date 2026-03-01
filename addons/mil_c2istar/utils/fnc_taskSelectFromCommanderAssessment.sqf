@@ -37,11 +37,12 @@ private _fallbackTask = if (count _taskPool > 0) then {
 };
 
 private _opcom = objNull;
+private _opcomInstances = missionNamespace getVariable ["OPCOM_instances", []];
 {
     if ({_x == _taskFaction} count ([_x, "factions", []] call ALiVE_fnc_HashGet) > 0) exitWith {
         _opcom = _x;
     };
-} forEach OPCOM_instances;
+} forEach _opcomInstances;
 
 if (isNull _opcom) exitWith {
     _fallbackTask
