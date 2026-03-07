@@ -528,15 +528,82 @@ switch (_operation) do {
                 _taskData set [6, position _player];
             };
 
+            private _strategicObjectivePosition = [];
+            private _hasStrategicObjectivePosition = false;
+            private _strategicReservationKey = [];
+            private _hasStrategicReservationKey = false;
+
+            if (_taskType in ["CaptureObjective", "MilDefence"]) then {
+                private _taskTargets = _taskData param [11, []];
+
+                if (_taskTargets isEqualType [] && {!(_taskTargets isEqualTo [])}) then {
+                    private _taskObjective = _taskTargets select 0;
+                    private _reservationKey = [];
+                    private _objectivePosition = [];
+
+                    switch (typeName _taskObjective) do {
+                        case "ARRAY": {
+                            _objectivePosition = [_taskObjective, "center", _taskLocation] call ALiVE_fnc_hashGet;
+                            _reservationKey = [_taskObjective, "objectiveID", ""] call ALiVE_fnc_hashGet;
+
+                            if (_reservationKey isEqualTo "") then {
+                                _reservationKey = [_taskObjective, "clusterID", ""] call ALiVE_fnc_hashGet;
+                            };
+
+                            if (_reservationKey isEqualTo "") then {
+                                _reservationKey = _objectivePosition;
+                            };
+                        };
+                        case "OBJECT": {
+                            _objectivePosition = position _taskObjective;
+                            _reservationKey = _objectivePosition;
+                        };
+                        case "STRING": {
+                            _objectivePosition = _taskLocation;
+                            _reservationKey = _taskObjective;
+                        };
+                    };
+
+                    if !(_objectivePosition isEqualTo []) then {
+                        _strategicObjectivePosition = _objectivePosition;
+                        _hasStrategicObjectivePosition = true;
+                    };
+
+                    private _hasReservationKey = switch (typeName _reservationKey) do {
+                        case "STRING": {_reservationKey != ""};
+                        default {!(_reservationKey isEqualTo [])};
+                    };
+
+                    if (_hasReservationKey) then {
+                        _strategicReservationKey = _reservationKey;
+                        _hasStrategicReservationKey = true;
+                    };
+                };
+            };
+
             private _taskSet = ["init", _taskID, _taskData, [], _debug] call (missionNamespace getVariable [format["ALIVE_fnc_task%1", _taskType],{}]);
 
 
             if (!isNil "_taskSet" && {_taskSet isEqualType [] && !(_taskSet isEqualTo [])}) then {
-				private _managedTaskParams = [_logic, "managedTaskParams"] call ALIVE_fnc_hashSet;
+				private _managedTaskParams = [_logic, "managedTaskParams"] call ALIVE_fnc_hashGet;
 
 				if !(_taskID in (_managedTaskParams select 1)) then {
 					[_managedTaskParams, _taskID, _taskSet select 1] call ALIVE_fnc_hashSet;
 				};
+
+                if (_taskID in (_managedTaskParams select 1)) then {
+                    private _taskParams = [_managedTaskParams, _taskID] call ALiVE_fnc_hashGet;
+
+                    if (_hasStrategicObjectivePosition) then {
+                        [_taskParams, "strategicObjectivePosition", _strategicObjectivePosition] call ALiVE_fnc_hashSet;
+                    };
+
+                    if (_hasStrategicReservationKey) then {
+                        [_taskParams, "strategicReservationKey", _strategicReservationKey] call ALiVE_fnc_hashSet;
+                    };
+
+                    [_managedTaskParams, _taskID, _taskParams] call ALiVE_fnc_hashSet;
+                };
 
 				{
 					[_logic, "registerTask", _x] call MAINCLASS;
@@ -1250,6 +1317,77 @@ switch (_operation) do {
             [_sideTasks, _taskID, _taskID] call ALIVE_fnc_hashSet;
         };
     };
+    case "parseTaskSource": {
+        if (_args isEqualType "") then {
+            private _taskSource = _args;
+            private _taskSourceParts = [_taskSource, "-"] call CBA_fnc_split;
+
+            if (count _taskSourceParts >= 3) then {
+                private _taskStage = _taskSourceParts select ((count _taskSourceParts) - 1);
+                private _taskType = _taskSourceParts select ((count _taskSourceParts) - 2);
+                private _rootTaskID = ((_taskSourceParts select [0, (count _taskSourceParts) - 2]) joinString "-");
+
+                _result = [_rootTaskID, _taskType, _taskStage];
+            } else {
+                _result = [_taskSource, "", ""];
+            };
+        };
+    };
+    case "releaseTaskReservation": {
+        if (_args isEqualType []) then {
+            private _task = _args;
+
+            _task params [
+                "_taskID",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "_parent",
+                "_taskSource"
+            ];
+
+            if (_parent == "None") then {
+                private _parsedTaskSource = [_logic, "parseTaskSource", _taskSource] call MAINCLASS;
+                _parsedTaskSource params ["_rootTaskID", "_taskType", "_taskStage"];
+
+                if (_taskType != "" && {_taskStage != ""} && {_rootTaskID == _taskID}) then {
+                    private _managedTaskParams = [_logic, "managedTaskParams"] call ALIVE_fnc_hashGet;
+
+                    if (_rootTaskID in (_managedTaskParams select 1)) then {
+                        private _taskParams = [_managedTaskParams, _rootTaskID] call ALiVE_fnc_hashGet;
+                        private _reservationKey = [_taskParams, "strategicReservationKey", []] call ALiVE_fnc_hashGet;
+
+                        if (!isNil QGVAR(playerRequests)) then {
+                            private _hasReservationKey = switch (typeName _reservationKey) do {
+                                case "STRING": {_reservationKey != ""};
+                                default {!(_reservationKey isEqualTo [])};
+                            };
+
+                            if (_hasReservationKey) then {
+                                private _currentTargets = [GVAR(playerRequests), _taskType, []] call ALiVE_fnc_hashGet;
+                                private _reservationIndex = _currentTargets find _reservationKey;
+
+                                if (_reservationIndex > -1) then {
+                                    _currentTargets deleteAt _reservationIndex;
+                                    [GVAR(playerRequests), _taskType, _currentTargets] call ALiVE_fnc_hashSet;
+                                };
+                            };
+                        };
+
+                        [_managedTaskParams, _rootTaskID] call ALIVE_fnc_hashRem;
+                        [_logic, "managedTaskParams", _managedTaskParams] call ALIVE_fnc_hashSet;
+                    };
+                };
+            };
+        };
+    };
     case "unregisterTask": {
         if (_args isEqualType "") then {
             private _taskID = _args;
@@ -1258,6 +1396,8 @@ switch (_operation) do {
             if (!isNil "_task") then {
                 private _taskSide = _task select 2;
                 private _taskPlayers = _task select 7 select 0;
+
+                [_logic, "releaseTaskReservation", _task] call MAINCLASS;
 
                 // Remove any markers
                 [_taskPlayers,_taskID] call ALIVE_fnc_taskDeleteMarkersForPlayers;
@@ -1479,7 +1619,7 @@ switch (_operation) do {
             waituntil {
                 private _managedTasks = [_logic, "managedTasks"] call ALIVE_fnc_hashGet;
                 private _activeTasks = [_logic, "activeTasks"] call ALIVE_fnc_hashGet;
-                private _managedTaskParams = [_logic, "managedTaskParams"] call ALIVE_fnc_hashSet;
+                private _managedTaskParams = [_logic, "managedTaskParams"] call ALIVE_fnc_hashGet;
                 private _managedTasksToRemove = [];
 
                 {
@@ -1499,9 +1639,9 @@ switch (_operation) do {
                         private _taskID = _x;
                         private _mainTask = [_logic, "getTask", _taskID] call MAINCLASS;
                         private _taskSide = _mainTask select 2;
-                        private _taskSource = _mainTask select 12;
-                        _taskSource = [_taskSource, "-"] call CBA_fnc_split;
-                        private _taskParams = [_managedTaskParams, _taskSource select 0] call ALIVE_fnc_hashGet;
+                        private _parsedTaskSource = [_logic, "parseTaskSource", _mainTask select 12] call MAINCLASS;
+                        _parsedTaskSource params ["_rootTaskID", "_taskType", "_taskStage"];
+                        private _taskParams = [_managedTaskParams, _rootTaskID] call ALIVE_fnc_hashGet;
 
                         // DEBUG -------------------------------------------------------------------------------------
                         if (_debug) then {
@@ -1511,7 +1651,7 @@ switch (_operation) do {
                         };
                         // DEBUG -------------------------------------------------------------------------------------
 
-                        private _task = [_taskSource select 2, _taskID, _mainTask, _taskParams, _debug] call (missionNamespace getVariable [format ["ALIVE_fnc_task%1", _taskSource select 1],{}]);
+                        private _task = [_taskStage, _taskID, _mainTask, _taskParams, _debug] call (missionNamespace getVariable [format ["ALIVE_fnc_task%1", _taskType],{}]);
 
                         if (!isNil "_task" && {_task isEqualType [] && !(_task isEqualTo [])}) then {
                             [_logic, "updateTask", _task] call MAINCLASS;
@@ -1531,7 +1671,7 @@ switch (_operation) do {
                                 [_logic, "updateTaskState", _task] call MAINCLASS;
                             } else {
                                 private _taskState = _task select 8;
-                                private _task = [_logic, "getTask", _taskSource select 0] call MAINCLASS;
+                                private _task = [_logic, "getTask", _rootTaskID] call MAINCLASS;
                                 _task set [8, _taskState];
                                 _task set [10, "N"];
 
