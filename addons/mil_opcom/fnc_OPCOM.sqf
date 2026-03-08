@@ -2892,3 +2892,4 @@ switch(_operation) do {
 };
 TRACE_1("OPCOM - output",_result);
 if !(isnil "_result") then {_result} else {nil};
+
