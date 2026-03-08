@@ -535,6 +535,34 @@ class CfgVehicles {
                                 typeName = "NUMBER";
                                 defaultValue = 10;
                         };
+                        class civicRecruitmentMultiplier
+                        {
+                                displayName = "Civic Pressure Recruitment Multiplier";
+                                description = "Scales how strongly the civic-state model slows insurgent recruitment in contested settlements.";
+                                typeName = "NUMBER";
+                                defaultValue = 1;
+                        };
+                        class civicInstallationMultiplier
+                        {
+                                displayName = "Civic Pressure Installation Multiplier";
+                                description = "Scales how strongly civic pressure weakens installation-driven hostility drift toward insurgents.";
+                                typeName = "NUMBER";
+                                defaultValue = 1;
+                        };
+                        class civicRetaliationChance
+                        {
+                                displayName = "Civic Retaliation Chance";
+                                description = "Base percent chance for insurgent retaliation after Hearts and Minds success in improving settlements. Whole numbers are treated as percents; legacy fractional values below 1 are still accepted as 0-1 scalars. Use 0 to disable.";
+                                typeName = "NUMBER";
+                                defaultValue = 0;
+                        };
+                        class civicRetaliationIntensity
+                        {
+                                displayName = "Civic Retaliation Intensity";
+                                description = "Scales the severity of insurgent backlash against improving settlements.";
+                                typeName = "NUMBER";
+                                defaultValue = 1;
+                        };
                 };
                 class ModuleDescription
                 {
@@ -585,3 +613,4 @@ class CfgVehicles {
                 };
         };
 };
+

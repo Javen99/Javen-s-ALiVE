@@ -148,6 +148,15 @@ switch(_operation) do {
                     _hostilityPresenceMultiplier = (_logic getvariable ["hostilityPresenceMultiplier",1]) max 0;
                     _hostilityInstallationMultiplier = (_logic getvariable ["hostilityInstallationMultiplier",1]) max 0;
                     _hostilityInstallationInterval = ((_logic getvariable ["hostilityInstallationInterval",10]) max 0) * 60;
+                    _civicRecruitmentMultiplier = (_logic getvariable ["civicRecruitmentMultiplier",1]) max 0;
+                    _civicInstallationMultiplier = (_logic getvariable ["civicInstallationMultiplier",1]) max 0;
+                    private _civicRetaliationChanceRaw = (_logic getvariable ["civicRetaliationChance",0]) max 0;
+                    _civicRetaliationChance = if (_civicRetaliationChanceRaw >= 1) then {
+                        (_civicRetaliationChanceRaw min 100) / 100
+                    } else {
+                        _civicRetaliationChanceRaw min 1
+                    };
+                    _civicRetaliationIntensity = (_logic getvariable ["civicRetaliationIntensity",1]) max 0;
                     _debug = ((_logic getvariable ["debug","false"]) == "true");
                     _persistent = ((_logic getvariable ["persistent","false"]) == "true");
                     _reinforcements = call compile (_logic getvariable ["reinforcements","0.9"]);
@@ -219,6 +228,10 @@ switch(_operation) do {
                     [_handler, "hostilityPresenceMultiplier",_hostilityPresenceMultiplier] call ALiVE_fnc_HashSet;
                     [_handler, "hostilityInstallationMultiplier",_hostilityInstallationMultiplier] call ALiVE_fnc_HashSet;
                     [_handler, "hostilityInstallationInterval",_hostilityInstallationInterval] call ALiVE_fnc_HashSet;
+                    [_handler, "civicRecruitmentMultiplier",_civicRecruitmentMultiplier] call ALiVE_fnc_HashSet;
+                    [_handler, "civicInstallationMultiplier",_civicInstallationMultiplier] call ALiVE_fnc_HashSet;
+                    [_handler, "civicRetaliationChance",_civicRetaliationChance] call ALiVE_fnc_HashSet;
+                    [_handler, "civicRetaliationIntensity",_civicRetaliationIntensity] call ALiVE_fnc_HashSet;
                     [_handler, "opcomID",_opcomID] call ALiVE_fnc_HashSet;
                     [_handler, "debug",_debug] call ALiVE_fnc_HashSet;
                     [_handler, "persistent",_persistent] call ALiVE_fnc_HashSet;
@@ -2905,3 +2918,4 @@ switch(_operation) do {
 };
 TRACE_1("OPCOM - output",_result);
 if !(isnil "_result") then {_result} else {nil};
+
