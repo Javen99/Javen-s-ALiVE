@@ -22,6 +22,7 @@ private["_worldName"];
  ALIVE_civilianConstructionBuildingTypes = [];
  ALIVE_civilianSettlementBuildingTypes = [];
  if(tolower(_worldName) == "takistan") then {
+ALiVE_mapCompositionType = "Desert";
 ALIVE_militaryBuildingTypes = ALIVE_militaryBuildingTypes + ["airport_tower","radar","bunker","cargo_house_v","cargo_patrol_","research","mil_wall","fortification","razorwire","dome","deerstand","vez"];
 ALIVE_militaryParkingBuildingTypes = ALIVE_militaryParkingBuildingTypes + ["bunker","cargo_house_v","cargo_patrol_","research","bunker"];
 ALIVE_militarySupplyBuildingTypes = ALIVE_militarySupplyBuildingTypes + ["barrack","cargo_hq_","miloffices","cargo_house_v","cargo_patrol_","research","barrack","mil_house","mil_controltower"];

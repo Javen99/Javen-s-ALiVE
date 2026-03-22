@@ -86,6 +86,11 @@ class cfgFunctions {
                                 file = "\x\alive\addons\mil_ied\fnc_IEDSaveData.sqf";
                                 RECOMPILE;
                         };
+                        class IEDPlacementHelpers {
+                                description = "Helper functions for terrain validation and tactical IED placement";
+                                file = "\x\alive\addons\mil_ied\fnc_IEDPlacementHelpers.sqf";
+                                RECOMPILE;
+                        };
                 };
         };
 };

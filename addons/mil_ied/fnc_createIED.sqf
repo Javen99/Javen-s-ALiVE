@@ -32,7 +32,10 @@ if ((count _this) > 2) then {
 if ((count _this) > 3) then {
     _numIEDs = _this select 3;
 } else {
-    _numIEDs = round ((_size / 50) * ( _threat / 100));
+    // IMPROVED: Reduced spawn formula - divisor changed from 50 to 150 for 67% reduction
+    _numIEDs = round ((_size / 150) * ( _threat / 100));
+    // Ensure minimum of 1 IED if threat > 0
+    if (_numIEDs < 1 && _threat > 0) then {_numIEDs = 1;};
 };
 
 // Get IEDs from store if available
@@ -72,24 +75,34 @@ for "_j" from 1 to _numIEDs do {
         _posloc set [_index, -1];
         _posloc = _posloc - [-1];
 
-        // Find safe location - if no safe pos find random position within 6m
-        _IEDpos = [_pos, 4, 20, 2, 0, 0, 0,[],[[((_pos select 0) - 6) + random 12, ((_pos select 1) - 6) + random 12, 0]]] call BIS_fnc_findSafePos;
+        // Use validated position directly - our placement validation already handled terrain/obstacles
+        _IEDpos = _pos;
 
         private ["_IEDskins","_near","_choice","_allIEDClasses"];
 
-        // Check no other IEDs nearby
+        // Check no other IEDs nearby - IMPROVED: increased from 3m to 12m for better spacing
         _allIEDClasses = ([ADDON, "roadIEDClasses"] call MAINCLASS) + ([ADDON, "urbanIEDClasses"] call MAINCLASS);
-        _near = nearestObjects [_IEDpos, _allIEDClasses, 3];
+        _near = nearestObjects [_IEDpos, _allIEDClasses, 12];
 
-        // Exit if other IEDs are found or position is on water
-        if (count _near > 0) exitWith {diag_log format ["ALIVE-%1 IED: exiting as other IEDs found %2",time,_near]; _error = true;};
-        if (surfaceIsWater _IEDpos) exitWith {diag_log format ["ALIVE-%1 IED: exiting as pos was on water.",time]; _error = true;};
+        // Exit THIS ITERATION if other IEDs are found or position is on water
+        if (count _near > 0) then {
+            diag_log format ["ALIVE-%1 IED: skipping - other IEDs found %2",time,_near]; 
+            _error = true;
+        };
+        if (surfaceIsWater _IEDpos) then {
+            diag_log format ["ALIVE-%1 IED: skipping - pos was on water.",time]; 
+            _error = true;
+        };
 
         // Check not placed near a player
-        // Exit if position is too close to a player
-        if ({(getpos _x distance _IEDpos) < 75} count ([] call BIS_fnc_listPlayers) > 0) exitWith {diag_log format ["ALIVE-%1 IED: exiting as placement too close to player.",time]; _error = true;};
+        // Skip THIS ITERATION if position is too close to a player
+        if ({(getpos _x distance _IEDpos) < 75} count ([] call BIS_fnc_listPlayers) > 0) then {
+            diag_log format ["ALIVE-%1 IED: skipping - placement too close to player.",time]; 
+            _error = true;
+        };
 
-        // Select type of IED
+        // If error occurred, skip IED creation for this iteration
+        if (!_error) then {
         if (isOnRoad _IEDpos) then {
             _IEDskins = [ADDON, "roadIEDClasses"] call MAINCLASS;
         } else {
@@ -143,6 +156,8 @@ for "_j" from 1 to _numIEDs do {
         [_data, "IEDDud", _dud] call ALiVE_fnc_hashSet;
         [_IEDdata, _ID, _data] call ALiVE_fnc_hashSet;
 
+        }; // End of if (!_error) block - only create IED if no errors
+
     } else {
         private ["_data"];
         _ID = (_IEDs select 1) select (_j-1);
@@ -154,9 +169,9 @@ for "_j" from 1 to _numIEDs do {
         };
     };
 
-    if (_error) exitWith {diag_log format ["ALIVE-%1 IED: exiting as could not find suitable place.",time];};
-
-    _IED setvariable ["ID", _ID];
+    // Only proceed with IED setup if no error occurred and IED was created
+    if (!_error) then {
+        _IED setvariable ["ID", _ID];
     _IED setvariable ["town", _town];
 
     // Check if Dud IED
@@ -231,6 +246,7 @@ for "_j" from 1 to _numIEDs do {
         ADDON setVariable ["debugMarkers",_markers];
 
     };
+    }; // End of if (!_error) - only set up IED if it was successfully created
 };
 
 // Set data

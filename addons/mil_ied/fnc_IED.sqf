@@ -451,7 +451,11 @@ switch(_operation) do {
                         _trg setTriggerArea[(_size+250), (_size+250),0,false];
 
                         if (_startupIED) then {
-                            _num = round ((_size / 50) * ( _iedThreat / 100));
+                            // IMPROVED: Reduced spawn formula - divisor changed from 50 to 150 for 67% reduction
+                            // This makes LOW spawn significantly fewer IEDs
+                            _num = round ((_size / 150) * ( _iedThreat / 100));
+                            // Ensure minimum of 1 IED if threat > 0
+                            if (_num < 1 && _iedThreat > 0) then {_num = 1;};
                             _trg setTriggerActivation["ANY","PRESENT",true]; // true = repeated
                             _trg setTriggerStatements["this && ({(vehicle _x in thisList) && ((getposATL _x) select 2 < 25)} count ([] call BIS_fnc_listPlayers) > 0)", format ["null = [getpos thisTrigger,%1,""%2"",%3] call ALIVE_fnc_createIED",_size, text _twn, _num], format ["null = [getpos thisTrigger,""%1""] call ALIVE_fnc_removeIED",text _twn]];
                             [_logic, "storeTrigger", [_size,text _twn,getPos _twn, false,"IED",_num]] call MAINCLASS;
