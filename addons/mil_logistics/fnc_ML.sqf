@@ -29,7 +29,7 @@ See Also:
 - <ALIVE_fnc_MLInit>
 
 Author:
-ARJay
+ARJay & Jman
 ---------------------------------------------------------------------------- */
 
 #define SUPERCLASS ALIVE_fnc_baseClass

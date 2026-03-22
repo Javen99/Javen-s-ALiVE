@@ -24,7 +24,7 @@ Functions:
 - "getConcealmentScore" - Calculate concealment quality of position
 
 Author:
-Modified for improved placement logic with advanced tactical features
+Jman
 
 ---------------------------------------------------------------------------- */
 

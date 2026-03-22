@@ -30,7 +30,7 @@ See Also:
 - The Slowest Arma Module Ever Written
 
 Author:
-Tupolov
+Tupolov & Jman
 ---------------------------------------------------------------------------- */
 
 #define SUPERCLASS ALIVE_fnc_baseClass
