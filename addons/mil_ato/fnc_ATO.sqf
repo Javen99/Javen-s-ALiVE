@@ -4606,22 +4606,24 @@ switch(_operation) do {
                             if (_debug) then {
                                ["ATO EVENT TARGETS: %1 (%2)", _eventTargets, typeName _eventTargets] call ALiVE_fnc_dump;
                             };
-                            {
-                                if (isNull _x) then {
-                                    private _profileID = _eventEnemyProfiles select _forEachIndex;
-                                    private _targetProfile = [ALiVE_profileHandler, "getProfile", _profileID] call ALiVE_fnc_ProfileHandler;
-                                    if !(isNil "_targetProfile") then {
-                                        private _type = [_targetProfile,"type"] call ALiVE_fnc_hashGet;
-                                        private _vehicle = objNull;
-                                        if (_type == "entity") then {
-                                            _vehicle = [_targetProfile,"leader"] call ALiVE_fnc_hashGet;
-                                        } else {
-                                            _vehicle = [_targetProfile,"vehicle"] call ALiVE_fnc_hashGet;
+                            if !(isNil "_eventTargets") then {
+                                {
+                                    if (isNull _x) then {
+                                        private _profileID = _eventEnemyProfiles select _forEachIndex;
+                                        private _targetProfile = [ALiVE_profileHandler, "getProfile", _profileID] call ALiVE_fnc_ProfileHandler;
+                                        if !(isNil "_targetProfile") then {
+                                            private _type = [_targetProfile,"type"] call ALiVE_fnc_hashGet;
+                                            private _vehicle = objNull;
+                                            if (_type == "entity") then {
+                                                _vehicle = [_targetProfile,"leader"] call ALiVE_fnc_hashGet;
+                                            } else {
+                                                _vehicle = [_targetProfile,"vehicle"] call ALiVE_fnc_hashGet;
+                                            };
+                                            _eventTargets set [_forEachIndex, _vehicle];
                                         };
-                                        _eventTargets set [_forEachIndex, _vehicle];
                                     };
-                                };
-                            } forEach _eventTargets;
+                                } forEach _eventTargets;
+                            };
 
                             private _wpPosition = _eventPosition;
 
@@ -5028,7 +5030,9 @@ switch(_operation) do {
                 if (count _ammoArray > 0) then {
                     private _avail = 0;
                     {
-                        _avail = _avail + ((_x select 1)/(_x select 2));
+                        if ((_x select 2) > 0) then {
+                            _avail = _avail + ((_x select 1)/(_x select 2));
+                        };
                     } forEach _ammoArray;
                     _ammo = _avail / count _ammoArray;
                 };
