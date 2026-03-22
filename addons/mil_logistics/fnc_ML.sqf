@@ -56,6 +56,21 @@ ARJay
 #define START_FORCE_STRENGTH_INC_FACTOR "1"
 #define START_FORCE_STRENGTH_DEC false
 #define START_FORCE_STRENGTH_DEC_FACTOR "1"
+// LZ search constants
+#define LZ_MIN_CLEAR_RADIUS 5
+#define LZ_OBJECT_CLEAR_RADIUS 20
+#define LZ_VEHICLE_CLEAR_RADIUS 15
+#define LZ_VERTICAL_CHECK_HEIGHT 35
+#define LZ_MAX_GRADIENT 15
+#define LZ_MAX_SEARCH_ATTEMPTS 8
+#define LZ_SEARCH_RADIUS_INCREMENT 25
+#define FUEL_WATCHDOG_STARTUP_DELAY 120
+#define FUEL_WATCHDOG_CHECK_INTERVAL 10
+#define FUEL_WATCHDOG_LOW_FUEL_THRESHOLD 0.15
+#define FUEL_WATCHDOG_RECOVER_FUEL 0.5
+#define FUEL_WATCHDOG_HOVER_SPEED_THRESHOLD 5
+#define FUEL_WATCHDOG_MIN_HOVER_HEIGHT 5
+#define MAX_GROUPS_PER_REQUEST 5
 
 private ["_result"];
 
@@ -366,6 +381,771 @@ switch(_operation) do {
         _result = [_logic,_operation,_args,START_FORCE_STRENGTH_DEC_FACTOR] call ALIVE_fnc_OOsimpleOperation;
     };    
     
+    // ============================================================
+    // NEW OPERATION: prepareHelicopterLZ
+    // Finds a clear landing zone near a position, moves any
+    // blocking infantry out of the way, and returns the cleared pos.
+    // Args: [_centerPosition, _searchRadius (optional, default 80)]
+    // Returns: position array
+    // ============================================================
+    case "prepareHelicopterLZ": {
+
+        private _centerPos    = _args select 0;
+        private _searchRadius = if (count _args > 1) then {_args select 1} else {80};
+        private _debug        = [_logic, "debug"] call MAINCLASS;
+
+        ["ML - prepareHelicopterLZ: Searching for clear LZ near %1 radius %2",
+            _centerPos, _searchRadius] call ALiVE_fnc_dump;
+
+        private _clearPos  = [];
+        private _attempts  = 0;
+        private _curRadius = _searchRadius;
+
+        while {count _clearPos == 0 && _attempts < LZ_MAX_SEARCH_ATTEMPTS} do {
+
+            private _candidate = [
+                _centerPos,
+                LZ_MIN_CLEAR_RADIUS,
+                _curRadius,
+                LZ_OBJECT_CLEAR_RADIUS,
+                0,
+                LZ_MAX_GRADIENT,
+                0
+            ] call BIS_fnc_findSafePos;
+
+            if (_debug) then {
+                ["ML - prepareHelicopterLZ: Attempt %1 candidate %2",
+                    _attempts + 1, _candidate] call ALiVE_fnc_dump;
+            };
+
+            if (!(surfaceIsWater _candidate) && !(_candidate isEqualTo []) && (count _candidate < 3 || (_candidate select 2) < 10)) then {
+
+                private _nearTerrain  = nearestTerrainObjects [
+                    _candidate,
+                    ["ROCK","TREE","BUSH","WALL","FENCE","HOUSE"],
+                    LZ_OBJECT_CLEAR_RADIUS
+                ];
+                private _nearVehicles = _candidate nearEntities [
+                    ["Car","Tank","Air","Ship"],
+                    LZ_VEHICLE_CLEAR_RADIUS
+                ];
+
+                private _checkHigh  = _candidate vectorAdd [0, 0, LZ_VERTICAL_CHECK_HEIGHT];
+                private _checkLow   = _candidate vectorAdd [0, 0, 1];
+                private _obstructed = count (lineIntersectsSurfaces [
+                    AGLtoASL _checkHigh,
+                    AGLtoASL _checkLow,
+                    objNull, objNull, true, 1, "GEOM"
+                ]) > 0;
+
+                if (_debug) then {
+                    ["ML - prepareHelicopterLZ: terrain=%1 vehicles=%2 obstructed=%3",
+                        count _nearTerrain, count _nearVehicles, _obstructed] call ALiVE_fnc_dump;
+                };
+
+                if (count _nearTerrain == 0 && count _nearVehicles == 0 && !_obstructed) then {
+                    _clearPos = _candidate;
+                    if (_debug) then {
+                        ["ML - prepareHelicopterLZ: Clear LZ found at %1 on attempt %2",
+                            _clearPos, _attempts + 1] call ALiVE_fnc_dump;
+                    };
+                };
+            };
+
+            _curRadius = _curRadius + LZ_SEARCH_RADIUS_INCREMENT;
+            _attempts  = _attempts + 1;
+        };
+
+        if (count _clearPos == 0) then {
+            _clearPos = _centerPos;
+            ["ML - prepareHelicopterLZ: WARNING - No clear LZ found after %1 attempts, using original pos %2",
+                LZ_MAX_SEARCH_ATTEMPTS, _centerPos] call ALiVE_fnc_dump;
+        };
+
+        // Move blocking infantry clear of the chosen LZ
+        private _blockingInfantry = _clearPos nearEntities [["Man"], LZ_OBJECT_CLEAR_RADIUS];
+        if (count _blockingInfantry > 0) then {
+            ["ML - prepareHelicopterLZ: Moving %1 blocking infantry from LZ %2",
+                count _blockingInfantry, _clearPos] call ALiVE_fnc_dump;
+            {
+                private _movePos = [getPos _x, 8, 30, 1, 0, LZ_MAX_GRADIENT, 0] call BIS_fnc_findSafePos;
+                if (count _movePos > 0 && !(surfaceIsWater _movePos)) then {
+                    _x setPos _movePos;
+                    if (_debug) then {
+                        ["ML - prepareHelicopterLZ: Moved unit %1 to %2", _x, _movePos] call ALiVE_fnc_dump;
+                    };
+                };
+            } forEach _blockingInfantry;
+        };
+
+        if (_debug) then {
+            [_logic, "createMarker", [_clearPos, "BLU_F", "ML LZ"]] call MAINCLASS;
+            ["ML - prepareHelicopterLZ: Final LZ: %1", _clearPos] call ALiVE_fnc_dump;
+        };
+
+        // Ensure returned position has Z coordinate
+        if (count _clearPos == 2) then { _clearPos pushback 0; };
+
+        _result = _clearPos;
+    };
+
+    // ============================================================
+    // NEW OPERATION: findHelicopterLandingPos
+    // Terrain and obstacle aware destination position search.
+    // Checks terrain objects, vehicles, and vertical clearance.
+    // Args: [_centerPosition, _minRadius, _maxRadius]
+    // Returns: position array
+    // ============================================================
+    case "findHelicopterLandingPos": {
+
+        private _centerPos     = _args select 0;
+        private _minRadius     = _args select 1;
+        private _maxRadius     = _args select 2;
+        private _usedPositions = if (count _args > 3) then { _args select 3 } else { [] };
+        private _debug         = [_logic, "debug"] call MAINCLASS;
+
+        ["ML - findHelicopterLandingPos: Searching near %1 min %2 max %3",
+            _centerPos, _minRadius, _maxRadius] call ALiVE_fnc_dump;
+
+        private _foundPos = [];
+
+        // --- Pass 1: Try roads first - they are clear of buildings by definition ---
+        private _searchRadius = _maxRadius;
+        for "_r" from 0 to 3 do {
+            if (count _foundPos > 0) exitWith {};
+            private _roads = _centerPos nearRoads _searchRadius;
+            // Sort by distance
+            _roads = _roads apply { [_x distance2D _centerPos, _x] };
+            _roads sort true;
+
+            // Merge caller's usedPositions with global tracker
+            private _allUsedPos = _usedPositions + (missionNamespace getVariable ["ALIVE_ML_usedLZPositions", []]);
+
+            {
+                private _road = _x select 1;
+                private _candidate = getPos _road;
+                if (count _candidate < 2) then { continue };
+
+                // Skip if too close to any used position (global or local)
+                private _tooClose = false;
+                {
+                    private _usedPos = _x;
+                    // Global entries have 4 elements [x,y,z,time], local have 3
+                    if (count _usedPos > 3) then { _usedPos = [_usedPos select 0, _usedPos select 1, _usedPos select 2]; };
+                    if (_candidate distance _usedPos < 150) then { _tooClose = true; };
+                } forEach _allUsedPos;
+                if (_tooClose) then { continue };
+
+                // Must be within radius bounds
+                private _dist = _candidate distance2D _centerPos;
+                if (_dist < _minRadius || _dist > _searchRadius + 100) then { continue };
+
+                // Road surface check - no terrain objects or overhead structures
+                private _nearTerrain = nearestTerrainObjects [
+                    _candidate,
+                    ["ROCK","HOUSE","WALL","FENCE","BUILDING"],
+                    LZ_OBJECT_CLEAR_RADIUS
+                ];
+                // Check for any objects above the candidate (catches petrol station canopies etc)
+                private _nearObjects = _candidate nearObjects LZ_OBJECT_CLEAR_RADIUS;
+                private _hasOverhead = false;
+                {
+                    if ((getPosASL _x select 2) > (AGLtoASL _candidate select 2) + 1) then {
+                        _hasOverhead = true;
+                    };
+                } forEach _nearObjects;
+                private _nearVehicles = _candidate nearEntities [["Car","Tank","Air","Ship"], LZ_VEHICLE_CLEAR_RADIUS];
+
+                private _checkHigh = _candidate vectorAdd [0, 0, LZ_VERTICAL_CHECK_HEIGHT];
+                private _checkLow  = _candidate vectorAdd [0, 0, 1];
+                private _obstructed = count (lineIntersectsSurfaces [
+                    AGLtoASL _checkHigh, AGLtoASL _checkLow,
+                    objNull, objNull, true, 1, "GEOM"
+                ]) > 0;
+
+                // Gradient check - sample terrain height at 4 cardinal points 15m away
+                // and check the slope is within limits for a helicopter to land safely
+                private _h0 = getTerrainHeightASL _candidate;
+                private _gradientTooSteep = false;
+                {
+                    private _samplePos = _candidate getPos [15, _x];
+                    private _h1 = getTerrainHeightASL _samplePos;
+                    if (abs(_h1 - _h0) > 2.5) then { _gradientTooSteep = true; }; // ~9 degree slope limit
+                } forEach [0, 90, 180, 270];
+                if (_gradientTooSteep) then { continue };
+
+                if (count _nearTerrain == 0 && !_hasOverhead && count _nearVehicles == 0 && !_obstructed) then {
+                    _foundPos = _candidate;
+                    if (count _foundPos == 2) then { _foundPos pushback 0; };
+                    // Register in global tracker so other events avoid this spot
+                    private _globalUsed = missionNamespace getVariable ["ALIVE_ML_usedLZPositions", []];
+                    // Expire entries older than 10 minutes
+                    _globalUsed = _globalUsed select { (time - (_x select 3)) < 600 };
+                    _globalUsed pushback (_foundPos + [time]);
+                    missionNamespace setVariable ["ALIVE_ML_usedLZPositions", _globalUsed];
+                    if (_debug) then {
+                        ["ML - findHelicopterLandingPos: Road LZ found at %1", _foundPos] call ALiVE_fnc_dump;
+                    };
+                };
+                if (count _foundPos > 0) exitWith {};
+            } forEach _roads;
+            _searchRadius = _searchRadius + 100;
+        };
+
+        // --- Pass 2: BIS_fnc_findSafePos fallback if no road found ---
+        private _attempts    = 0;
+        private _maxAttempts = 16;
+        private _curMax      = _maxRadius;
+
+        while {count _foundPos == 0 && _attempts < _maxAttempts} do {
+
+            private _candidate = [
+                _centerPos,
+                _minRadius,
+                _curMax,
+                LZ_OBJECT_CLEAR_RADIUS,
+                0,
+                LZ_MAX_GRADIENT,
+                0
+            ] call BIS_fnc_findSafePos;
+
+            if (!(surfaceIsWater _candidate) && !(_candidate isEqualTo []) && (count _candidate < 3 || (_candidate select 2) < 10)) then {
+
+                private _nearTerrain  = nearestTerrainObjects [
+                    _candidate,
+                    ["ROCK","TREE","HOUSE","BUSH","WALL","FENCE"],
+                    LZ_OBJECT_CLEAR_RADIUS
+                ];
+                private _nearVehicles = _candidate nearEntities [
+                    ["Car","Tank","Air","Ship"],
+                    LZ_VEHICLE_CLEAR_RADIUS
+                ];
+
+                private _checkHigh  = _candidate vectorAdd [0, 0, LZ_VERTICAL_CHECK_HEIGHT];
+                private _checkLow   = _candidate vectorAdd [0, 0, 1];
+                private _obstructed = count (lineIntersectsSurfaces [
+                    AGLtoASL _checkHigh,
+                    AGLtoASL _checkLow,
+                    objNull, objNull, true, 1, "GEOM"
+                ]) > 0;
+
+                // Check spacing from already-assigned heli positions (local and global)
+                private _tooClose = false;
+                private _allUsed2 = _usedPositions + (missionNamespace getVariable ["ALIVE_ML_usedLZPositions", []]);
+                {
+                    private _usedPos2 = _x;
+                    if (count _usedPos2 > 3) then { _usedPos2 = [_usedPos2 select 0, _usedPos2 select 1, _usedPos2 select 2]; };
+                    if (_candidate distance _usedPos2 < 150) then { _tooClose = true; };
+                } forEach _allUsed2;
+
+                if (_debug) then {
+                    ["ML - findHelicopterLandingPos: Attempt %1 terrain=%2 vehicles=%3 obstructed=%4 tooClose=%5",
+                        _attempts + 1, count _nearTerrain, count _nearVehicles, _obstructed, _tooClose] call ALiVE_fnc_dump;
+                };
+
+                if (count _nearTerrain == 0 && count _nearVehicles == 0 && !_obstructed && !_tooClose) then {
+                    _foundPos = _candidate;
+                    // Register in global tracker
+                    private _globalUsed2 = missionNamespace getVariable ["ALIVE_ML_usedLZPositions", []];
+                    _globalUsed2 = _globalUsed2 select { (time - (_x select 3)) < 600 };
+                    _globalUsed2 pushback (_foundPos + [time]);
+                    missionNamespace setVariable ["ALIVE_ML_usedLZPositions", _globalUsed2];
+                    if (_debug) then {
+                        ["ML - findHelicopterLandingPos: Valid pos found %1 on attempt %2",
+                            _foundPos, _attempts + 1] call ALiVE_fnc_dump;
+                    };
+                };
+            };
+
+            _curMax   = _curMax + LZ_SEARCH_RADIUS_INCREMENT;
+            _attempts = _attempts + 1;
+        };
+
+        if (count _foundPos == 0) then {
+            _foundPos = _centerPos getPos [_minRadius + 20 + (count _usedPositions * 30), random 360];
+            ["ML - findHelicopterLandingPos: WARNING - No clear pos after %1 attempts, fallback %2",
+                _maxAttempts, _foundPos] call ALiVE_fnc_dump;
+        };
+
+        if (_debug) then {
+            ["ML - findHelicopterLandingPos: Final pos: %1", _foundPos] call ALiVE_fnc_dump;
+        };
+
+        // Ensure returned position has Z coordinate
+        if (count _foundPos == 2) then { _foundPos pushback 0; };
+
+        _result = _foundPos;
+    };
+    
+    
+    // ============================================================
+    // NEW OPERATION: findBestDeliveryObjective
+    // Scores OPCOM objectives by tactical need and friendly unit
+    // presence to find the most useful helicopter delivery destination.
+    // Prefers objectives that are actively contested (attack/defend)
+    // with few friendly units already present.
+    // Args: [_objectives, _insertionPos, _eventFaction, _side]
+    // Returns: position array, or [] if no suitable objective found
+    // ============================================================
+    case "findBestDeliveryObjective": {
+
+        private _objectives   = _args select 0;
+        private _insertionPos = _args select 1;
+        private _faction      = _args select 2;
+        private _side         = _args select 3;
+        private _departurePos = if (count _args > 4) then { _args select 4 } else { [] };
+        private _debug        = [_logic, "debug"] call MAINCLASS;
+
+        if (_debug) then {
+            ["ML - findBestDeliveryObjective: Scoring %1 objectives for faction %2",
+                count _objectives, _faction] call ALiVE_fnc_dump;
+        };
+
+        // Tactical state score - higher means more urgently needs reinforcement
+        // attack/capture: OPCOM is actively taking this with units present - best target
+        // defend: under pressure, reinforcements critical
+        // reserve: already held, safe fallback if no active objectives exist
+        // recon: skipped entirely (enemy/unknown territory)
+        // none: skipped entirely - OPCOM hasn't assessed it, could be enemy territory
+        private _stateScores = [
+            ["attack",  100],
+            ["capture", 100],
+            ["defend",   80],
+            ["reserve",  10]
+        ];
+
+        // Cap applied to raw OPCOM priority before scoring.
+        // Prevents a single very high priority objective (e.g. priority=1000)
+        // from dominating all tactical state considerations.
+        // Effective range after normalisation becomes 0-50 points.
+        private _priorityCap = 100;
+
+        // Radius within which to count friendly and enemy units near an objective
+        private _presenceCheckRadius = 500;
+
+        // Maximum friendly unit count at which an objective is considered
+        // well-staffed and deprioritised.
+        private _wellStaffedThreshold = 8;
+
+        // Valid active states for delivery destinations.
+        // attack/capture/defend = OPCOM has units actively engaged there - best target.
+        // reserve = OPCOM holds it - safe fallback when no active objectives exist.
+        // recon and none are excluded - unknown/unassessed territory.
+        private _activeStates = ["attack", "capture", "defend"];
+
+        private _bestObjective = nil;
+        private _bestScore     = -1;
+        private _bestPos       = [];
+        private _bestIsActive  = false;
+
+        {
+            private _obj         = _x;
+            private _objPos      = [_obj, "center"] call ALIVE_fnc_hashGet;
+            private _objPriority = [_obj, "priority"] call ALIVE_fnc_hashGet;
+            private _objState    = "none";
+
+            if ("tacom_state" in (_obj select 1)) then {
+                _objState = [_obj, "tacom_state", "none"] call ALIVE_fnc_hashGet;
+            };
+
+            // Skip recon and none objectives entirely.
+            // recon = OPCOM scouting enemy territory - unsafe.
+            // none = OPCOM hasn't assessed it yet - could be anything.
+            // Only attack/capture/defend/reserve are safe delivery targets.
+            if (_objState == "recon" || _objState == "none") then {
+                if (_debug) then {
+                    ["ML - findBestDeliveryObjective: Skipping objective %1 - state=%2 (unassessed/enemy territory)",
+                        _objPos, _objState] call ALiVE_fnc_dump;
+                };
+            } else {
+
+            // Skip objectives that are the same as or too close to the insertion point,
+            // or too close to the departure base - destination must be distinct from both
+            private _distFromInsertion = _insertionPos distance _objPos;
+            private _distFromDeparture = if (count _departurePos > 0) then { _departurePos distance _objPos } else { 9999 };
+            if (_distFromInsertion < 500) then {
+                if (_debug) then {
+                    ["ML - findBestDeliveryObjective: Skipping objective %1 - too close to insertion point (%2m)",
+                        _objPos, _distFromInsertion] call ALiVE_fnc_dump;
+                };
+            } else {
+            if (_distFromDeparture < 500) then {
+                if (_debug) then {
+                    ["ML - findBestDeliveryObjective: Skipping objective %1 - too close to departure base (%2m)",
+                        _objPos, _distFromDeparture] call ALiVE_fnc_dump;
+                };
+            } else {
+
+                private _isActive = _objState in _activeStates;
+
+                // If we already have an active-state candidate, skip inactive ones
+                if (_bestIsActive && !_isActive) then {
+                    if (_debug) then {
+                        ["ML - findBestDeliveryObjective: Skipping inactive objective %1 (state=%2) - active candidate already found",
+                            _objPos, _objState] call ALiVE_fnc_dump;
+                    };
+                } else {
+
+                    // State score
+                    private _stateScore = 40; // default for unknown states
+                    {
+                        if (_x select 0 == _objState) exitWith {
+                            _stateScore = _x select 1;
+                        };
+                    } forEach _stateScores;
+
+                    // Priority score - cap then normalise to 0-50 range.
+                    // Capping prevents outlier priorities from overwhelming
+                    // tactical state scores.
+                    private _cappedPriority = _objPriority min _priorityCap;
+                    private _priorityScore = (_cappedPriority / _priorityCap) * 50;
+
+                    // Count friendly and enemy units near the objective
+                    private _sideObj = [_side] call ALIVE_fnc_sideTextToObject;
+                    private _friendlyCount = 0;
+                    private _enemyCount = 0;
+                    private _nearUnits = _objPos nearEntities [["Man","Car","Tank"], _presenceCheckRadius];
+                    {
+                        if (side _x == _sideObj) then {
+                            _friendlyCount = _friendlyCount + 1;
+                        } else {
+                            if (side _x != civilian) then {
+                                _enemyCount = _enemyCount + 1;
+                            };
+                        };
+                    } forEach _nearUnits;
+
+                    // Skip objectives with significant enemy presence -
+                    // delivering reinforcements into an occupied enemy position
+                    // is counterproductive regardless of tactical state score.
+                    // Threshold of 3 allows for small patrols but blocks clearly
+                    // enemy-held locations.
+                    if (_enemyCount >= 3) then {
+                        if (_debug) then {
+                            ["ML - findBestDeliveryObjective: Skipping objective %1 (state=%2) - %3 enemy units within %4m",
+                                _objPos, _objState, _enemyCount, _presenceCheckRadius] call ALiVE_fnc_dump;
+                        };
+                    } else {
+
+                    // Presence score: 50 points when empty, scaling down to 0 at threshold
+                    private _presenceScore = 0;
+                    if (_friendlyCount < _wellStaffedThreshold) then {
+                        _presenceScore = ((_wellStaffedThreshold - _friendlyCount) / _wellStaffedThreshold) * 50;
+                    };
+
+                    // Combined score
+                    private _totalScore = _stateScore + _priorityScore + _presenceScore;
+
+                    if (_debug) then {
+                        ["ML - findBestDeliveryObjective: Objective at %1 state=%2 priority=%3 friendly=%4 enemy=%5 scores: state=%6 priority=%7 presence=%8 total=%9",
+                            _objPos, _objState, _objPriority, _friendlyCount, _enemyCount,
+                            _stateScore, _priorityScore, _presenceScore, _totalScore] call ALiVE_fnc_dump;
+                    };
+
+                    if (_totalScore > _bestScore || (_isActive && !_bestIsActive)) then {
+                        _bestScore     = _totalScore;
+                        _bestObjective = _obj;
+                        _bestPos       = _objPos;
+                        _bestIsActive  = _isActive;
+                    };
+
+                    }; // end enemy presence check
+
+                };
+            };
+            }; // end departure proximity check
+
+            }; // end recon skip
+
+        } forEach _objectives;
+
+        if (!isNil "_bestObjective" && count _bestPos > 0) then {
+            if (_debug) then {
+                private _bestLocName = [_bestPos] call ALIVE_fnc_taskGetNearestLocationName;
+                ["ML - findBestDeliveryObjective: Best objective selected near %1 at %2 with score %3",
+                    _bestLocName, _bestPos, _bestScore] call ALiVE_fnc_dump;
+            };
+        } else {
+            if (_debug) then {
+                ["ML - findBestDeliveryObjective: No suitable objective found"] call ALiVE_fnc_dump;
+            };
+            _bestPos = [];
+        };
+
+        _result = _bestPos;
+    };
+
+    // ============================================================
+    // NEW OPERATION: spawnHelicopterFuelWatchdog
+    // Monitors a helicopter for hover-lock / fuel starvation.
+    // Forces emergency landing and restores fuel for RTB.
+    // Args: [_transportProfileID, _fallbackPosition, _eventFaction]
+    // Returns: nil
+    // ============================================================
+    case "spawnHelicopterFuelWatchdog": {
+
+        private _profileID   = _args select 0;
+        private _fallbackPos = _args select 1;
+        private _faction     = _args select 2;
+        private _debug       = [_logic, "debug"] call MAINCLASS;
+
+        ["ML - spawnHelicopterFuelWatchdog: Starting watchdog for profile %1",
+            _profileID] call ALiVE_fnc_dump;
+
+        [_profileID, _fallbackPos, _faction, _debug] spawn {
+
+            private _profileID   = _this select 0;
+            private _fallbackPos = _this select 1;
+            private _faction     = _this select 2;
+            private _debug       = _this select 3;
+
+            sleep FUEL_WATCHDOG_STARTUP_DELAY;
+
+            private _active = true;
+
+            while {_active} do {
+                sleep FUEL_WATCHDOG_CHECK_INTERVAL;
+
+                private _profile = [ALIVE_profileHandler, "getProfile", _profileID] call ALIVE_fnc_profileHandler;
+
+                if (isNil "_profile") exitWith {
+                    if (_debug) then {
+                        ["ML - spawnHelicopterFuelWatchdog: Profile %1 gone, exiting",
+                            _profileID] call ALiVE_fnc_dump;
+                    };
+                    _active = false;
+                };
+
+                private _isActive = _profile select 2 select 1;
+
+                if (_isActive) then {
+                    private _heli = _profile select 2 select 10;
+
+                    if (!isNull _heli && alive _heli) then {
+
+                        private _fuel      = fuel _heli;
+                        private _posASL    = getPosASL _heli;
+                        private _groundASL = getTerrainHeightASL _posASL;
+                        private _heightAGL = (_posASL select 2) - _groundASL;
+                        private _spd       = speed _heli;
+
+                        if (_debug) then {
+                            ["ML - spawnHelicopterFuelWatchdog: %1 fuel=%2 heightAGL=%3 speed=%4",
+                                _profileID, _fuel, _heightAGL, _spd] call ALiVE_fnc_dump;
+                        };
+
+                        if (
+                            _fuel      < FUEL_WATCHDOG_LOW_FUEL_THRESHOLD &&
+                            _heightAGL > FUEL_WATCHDOG_MIN_HOVER_HEIGHT   &&
+                            _spd       < FUEL_WATCHDOG_HOVER_SPEED_THRESHOLD
+                        ) then {
+                            ["ML - spawnHelicopterFuelWatchdog: ALERT profile %1 hover-locked, fuel=%2. Forcing landing.",
+                                _profileID, _fuel] call ALiVE_fnc_dump;
+
+                            private _emergencyPos = [
+                                _fallbackPos, 0, 150,
+                                LZ_OBJECT_CLEAR_RADIUS,
+                                0, LZ_MAX_GRADIENT, 0
+                            ] call BIS_fnc_findSafePos;
+
+                            if (surfaceIsWater _emergencyPos || _emergencyPos isEqualTo []) then {
+                                _emergencyPos = _fallbackPos;
+                            };
+
+                            private _emergencyPad = createVehicle ["Land_HelipadEmpty_F", _emergencyPos, [], 0, "CAN_COLLIDE"];
+                            _heli landAt _emergencyPad;
+                            _heli setFuel FUEL_WATCHDOG_RECOVER_FUEL;
+
+                            // Clean up pad once landed or after timeout
+                            [_heli, _emergencyPad] spawn {
+                                private _h = _this select 0;
+                                private _p = _this select 1;
+                                private _t = 0;
+                                waitUntil { sleep 2; _t = _t + 2; (isTouchingGround _h || !alive _h || _t > 60) };
+                                deleteVehicle _p;
+                            };
+
+                            ["ML - spawnHelicopterFuelWatchdog: Emergency landing at %1, fuel restored for profile %2",
+                                _emergencyPos, _profileID] call ALiVE_fnc_dump;
+
+                            _active = false;
+                        };
+
+                    } else {
+                        if (_debug) then {
+                            ["ML - spawnHelicopterFuelWatchdog: Heli null/dead for %1, exiting",
+                                _profileID] call ALiVE_fnc_dump;
+                        };
+                        _active = false;
+                    };
+                };
+            };
+        };
+    };
+
+
+
+    // ============================================================
+    // spawnHeliDeliveryWatchdog
+    // Monitors a transport heli through its delivery cycle.
+    // Only acts when the heli is ACTIVE (spawned near players).
+    // Never fights ALiVE's virtualisation system.
+    // Phases: TRANSIT(0) -> LANDING(1) -> UNLOAD(2) -> RTB(3)
+    // Args: [_transportProfileID, _vehicleProfileID, _eventPosition, _returnPosition, _debug]
+    // ============================================================
+    case "spawnHeliDeliveryWatchdog": {
+
+        private _transportProfileID = _args select 0;
+        private _vehicleProfileID   = _args select 1;
+        private _eventPosition      = _args select 2;
+        private _returnPosition     = _args select 3;
+        private _debug              = _args select 4;
+
+        [_transportProfileID, _vehicleProfileID, _eventPosition, _returnPosition, _debug] spawn {
+
+            private _tProfID   = _this select 0;
+            private _vProfID   = _this select 1;
+            private _destPos   = _this select 2;
+            private _returnPos = _this select 3;
+            private _dbg       = _this select 4;
+
+            private _phase        = 0; // 0=transit 1=landing 2=unload 3=rtb
+            private _phaseTimer   = 0;
+            private _running      = true;
+            private _landAtIssued = false;
+
+            while {_running} do {
+                sleep 5;
+                _phaseTimer = _phaseTimer + 5;
+
+                private _tProf = [ALIVE_profileHandler, "getProfile", _tProfID] call ALIVE_fnc_profileHandler;
+                private _vProf = [ALIVE_profileHandler, "getProfile", _vProfID] call ALIVE_fnc_profileHandler;
+
+                // Profile gone - heli destroyed or cleaned up
+                if (isNil "_tProf" || isNil "_vProf") exitWith {
+                    if (_dbg) then { ["ML - heliDeliveryWatchdog: Profile gone (%1), exiting.", _tProfID] call ALiVE_fnc_dump; };
+                    _running = false;
+                };
+
+                private _isActive = _vProf select 2 select 1;
+                private _heli     = _vProf select 2 select 10;
+
+                // Only act when physically spawned - never force virtualisation state
+                if (_isActive && !isNull _heli && alive _heli) then {
+
+                    private _posASL    = getPosASL _heli;
+                    private _groundASL = getTerrainHeightASL _posASL;
+                    private _heightAGL = (_posASL select 2) - _groundASL;
+                    private _spd       = speed _heli;
+
+                    switch (_phase) do {
+
+                        // TRANSIT - wait until heli reaches destination area
+                        case 0: {
+                            if (_heli distance _destPos < 350) then {
+                                _phase = 1; _phaseTimer = 0; _landAtIssued = false;
+                                if (_dbg) then { ["ML - heliDeliveryWatchdog: %1 LANDING phase.", _tProfID] call ALiVE_fnc_dump; };
+                            };
+                            // Hard timeout - something went wrong in transit
+                            if (_phaseTimer > 900) then {
+                                ["ML - heliDeliveryWatchdog: %1 TRANSIT timeout, watchdog exiting.", _tProfID] call ALiVE_fnc_dump;
+                                _running = false;
+                            };
+                        };
+
+                        // LANDING - issue landAt immediately on phase entry, retry every 30s
+                        case 1: {
+                            if (isTouchingGround _heli) then {
+                                _phase = 2; _phaseTimer = 0;
+                                if (_dbg) then { ["ML - heliDeliveryWatchdog: %1 UNLOAD phase.", _tProfID] call ALiVE_fnc_dump; };
+                            } else {
+                                // Issue landAt immediately and retry every 30s
+                                // Use _landAtIssued as a 30s cooldown flag only - phaseTimer tracks total time in phase
+                                if (!_landAtIssued) then {
+                                    private _landPos = +_destPos;
+                                    _landPos set [2, 0];
+                                    private _landPad = createVehicle ["Land_HelipadEmpty_F", _landPos, [], 0, "CAN_COLLIDE"];
+                                    _heli landAt _landPad;
+                                    _landAtIssued = true;
+                                    [_heli, _landPad] spawn {
+                                        private _h = _this select 0; private _p = _this select 1; private _t = 0;
+                                        waitUntil { sleep 2; _t = _t + 2; isTouchingGround _h || !alive _h || _t > 120 };
+                                        deleteVehicle _p;
+                                    };
+                                    if (_dbg) then { ["ML - heliDeliveryWatchdog: %1 landAt issued.", _tProfID] call ALiVE_fnc_dump; };
+                                };
+                                // Allow retry after 30s by clearing the flag - but don't reset phaseTimer
+                                if (_landAtIssued && (_phaseTimer mod 35) < 5) then {
+                                    _landAtIssued = false;
+                                };
+                                // Give up after 5 min total in landing phase
+                                if (_phaseTimer > 300) then {
+                                    _phase = 2; _phaseTimer = 0;
+                                    ["ML - heliDeliveryWatchdog: %1 LANDING timeout (%2m AGL), forcing UNLOAD.", _tProfID, _heightAGL] call ALiVE_fnc_dump;
+                                };
+                            };
+                        };
+
+                        // UNLOAD - wait for cargo to exit, then issue RTB waypoints
+                        case 2: {
+                            private _cargoCount = 0;
+                            {
+                                if (alive _x && vehicle _x == _heli && !(_x in crew _heli)) then {
+                                    _cargoCount = _cargoCount + 1;
+                                };
+                            } forEach crew _heli;
+
+                            if (_cargoCount == 0 || _phaseTimer > 120) then {
+                                // Force eject any remaining cargo
+                                if (_cargoCount > 0) then {
+                                    { if (alive _x && !(vehicle _x == _x) && !(_x in crew _heli)) then { unassignVehicle _x; _x moveOut _heli; }; } forEach crew _heli;
+                                };
+
+                                // Issue RTB waypoints via profile - go direct to return position
+                                // No intermediate waypoint to avoid heli hovering at air position
+                                private _tProfNow = [ALIVE_profileHandler, "getProfile", _tProfID] call ALIVE_fnc_profileHandler;
+                                if !(isNil "_tProfNow") then {
+                                    private _wpReturn  = [_returnPos, 400, "MOVE", "NORMAL", 300, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                                    [_tProfNow, "clearWaypoints"] call ALIVE_fnc_profileEntity;
+                                    [_tProfNow, "addWaypoint", _wpReturn] call ALIVE_fnc_profileEntity;
+                                };
+
+                                _phase = 3; _phaseTimer = 0;
+                                if (_dbg) then { ["ML - heliDeliveryWatchdog: %1 RTB phase, waypoints issued.", _tProfID] call ALiVE_fnc_dump; };
+                            };
+                        };
+
+                        // RTB - once far enough away, done
+                        case 3: {
+                            if (_heli distance _destPos > 1200 || _phaseTimer > 600) then {
+                                _running = false;
+                                if (_dbg) then { ["ML - heliDeliveryWatchdog: %1 RTB complete, exiting.", _tProfID] call ALiVE_fnc_dump; };
+                            };
+                        };
+
+                    }; // end switch
+
+                } else {
+                    // Heli is virtual (not near players) - just track time and exit if too long
+                    // Don't try to force it active - trust ALiVE's virtualisation
+                    if (_phase == 3 && _phaseTimer > 120) then {
+                        // RTB and virtual = successfully departed, done
+                        _running = false;
+                        if (_dbg) then { ["ML - heliDeliveryWatchdog: %1 virtualised in RTB, done.", _tProfID] call ALiVE_fnc_dump; };
+                    };
+                    if (_phaseTimer > 1200) then {
+                        // Something went wrong - exit to avoid zombie watchdog
+                        _running = false;
+                        ["ML - heliDeliveryWatchdog: %1 global timeout, exiting.", _tProfID] call ALiVE_fnc_dump;
+                    };
+                };
+
+            }; // end while
+
+        }; // end spawn
+
+    }; // end case spawnHeliDeliveryWatchdog
+
 
 
     // Main process
@@ -1363,6 +2143,41 @@ switch(_operation) do {
                             _eventForceMakeup set [5,0];
                         };
 
+                        // -----------------------------------------------------------------
+                        // FIX: Cap each force type to MAX_GROUPS_PER_REQUEST to prevent
+                        // OPCOM from requesting unreasonably large reinforcements.
+                        // Also recompute _forceMakeupTotal after capping.
+                        // -----------------------------------------------------------------
+                        private _capApplied = false;
+                        for "_capIdx" from 0 to ((count _eventForceMakeup) - 1) do {
+                            private _capVal = _eventForceMakeup select _capIdx;
+                            if (_capVal > MAX_GROUPS_PER_REQUEST) then {
+                                _eventForceMakeup set [_capIdx, MAX_GROUPS_PER_REQUEST];
+                                _capApplied = true;
+                            };
+                        };
+
+                        if (_capApplied && _debug) then {
+                            ["ML - LOGCOM_REQUEST: Force makeup capped to max %1 per type. Capped makeup: %2",
+                                MAX_GROUPS_PER_REQUEST, _eventForceMakeup] call ALiVE_fnc_dump;
+                        };
+
+                        // Recompute total after capping
+                        _eventForceInfantry   = _eventForceMakeup select 0;
+                        _eventForceMotorised  = _eventForceMakeup select 1;
+                        _eventForceMechanised = _eventForceMakeup select 2;
+                        _eventForceArmour     = _eventForceMakeup select 3;
+                        _eventForcePlane      = _eventForceMakeup select 4;
+                        _eventForceHeli       = _eventForceMakeup select 5;
+
+                        _forceMakeupTotal = _eventForceInfantry + _eventForceMotorised + _eventForceMechanised + _eventForceArmour + _eventForcePlane + _eventForceHeli;
+
+                        if (_debug) then {
+                            ["ML - LOGCOM_REQUEST: Final force makeup after cap: %1 total groups: %2",
+                                _eventForceMakeup, _forceMakeupTotal] call ALiVE_fnc_dump;
+                        };
+                        // -----------------------------------------------------------------
+
                         _eventData set [3, _eventForceMakeup];
                         [_event, "data", _eventData] call ALIVE_fnc_hashSet;
 
@@ -1417,6 +2232,30 @@ switch(_operation) do {
                         [_event, "finalDestination", []] call ALIVE_fnc_hashSet;
 
                         [_event, "eventAssets", []] call ALIVE_fnc_hashSet;
+
+                        // -----------------------------------------------------------------
+                        // FIX: Reserve force pool immediately at request receipt to prevent
+                        // burst requests all passing the pool check before any deduction.
+                        // We deduct _forceMakeupTotal as a reservation. The actual profile
+                        // creation may produce a different count, which is reconciled in
+                        // monitorEvent by deducting the true count and refunding the
+                        // reservation difference.
+                        // -----------------------------------------------------------------
+                        private _reservationAmount = _forceMakeupTotal;
+                        if(_eventType != "PR_STANDARD" && _eventType != "PR_AIRDROP" && _eventType != "PR_HELI_INSERT") then {
+                            private _registryID = [_logic, "registryID"] call MAINCLASS;
+                            _forcePool = _forcePool - _reservationAmount;
+                            [ALIVE_MLGlobalRegistry,"updateGlobalForcePool",[_registryID,_forcePool]] call ALIVE_fnc_MLGlobalRegistry;
+                            [_event, "poolReservation", _reservationAmount] call ALIVE_fnc_hashSet;
+
+                            if(_debug) then {
+                                ["ML - LOGCOM_REQUEST: Reserved %1 from force pool. Remaining pool: %2",
+                                    _reservationAmount, _forcePool] call ALiVE_fnc_dump;
+                            };
+                        } else {
+                            [_event, "poolReservation", 0] call ALIVE_fnc_hashSet;
+                        };
+                        // -----------------------------------------------------------------
 
                         // store the event on the event queue
                         _eventQueue = [_logic, "eventQueue"] call MAINCLASS;
@@ -1653,12 +2492,142 @@ switch(_operation) do {
                             if(_primaryReinforcementObjectivePriority > 40 && _primaryReinforcementObjectivePriority < 51) then {
                                 _reinforcementType = "HELI";
                             };
+                            
+                            
+                        // -----------------------------------------------------------------
+                        // NEW: Single objective guard - if there is only one reserved
+                        // objective it is simultaneously the insertion point AND the
+                        // destination, which means helicopters fly units nowhere.
+                        // When this is detected, find the nearest enemy-contested or
+                        // uncontrolled mil cluster to use as the actual delivery target
+                        // instead, so units are sent somewhere useful.
+                        // -----------------------------------------------------------------
+                        if (count _reserve == 1) then {
+
+                            private _insertionPos = [_primaryReinforcementObjective, "center"] call ALIVE_fnc_hashGet;
+
+                            if (_debug) then {
+                                ["ML - onDemandAnalysis: Single reserved objective detected at %1. Searching for frontline destination.",
+                                    _insertionPos] call ALiVE_fnc_dump;
+                            };
+
+                            private _frontlineObjective = nil;
+                            private _frontlineDist = 0;
+
+                            // First preference: look for objectives OPCOM does not currently hold
+                            // sorted by distance from the insertion point - closest contested
+                            // objective is the most tactically relevant destination
+                            if (count _objectives > 0) then {
+
+                                private _nonReserveObjectives = _objectives select {
+                                    private _objState = "";
+                                    if ("tacom_state" in (_x select 1)) then {
+                                        _objState = [_x, "tacom_state", "none"] call ALIVE_fnc_hashGet;
+                                    };
+                                    // Include objectives that are being attacked or are unassigned
+                                    // but exclude our own reserve (held) objectives
+                                    _objState != "reserve"
+                                };
+
+                                if (_debug) then {
+                                    ["ML - onDemandAnalysis: Found %1 non-reserve objectives as potential destinations",
+                                        count _nonReserveObjectives] call ALiVE_fnc_dump;
+                                };
+
+                                if (count _nonReserveObjectives > 0) then {
+
+                                    // Sort by distance from insertion point ascending
+                                    // so we pick the closest frontline objective
+                                    private _sortedFrontline = [
+                                        _nonReserveObjectives, [],
+                                        {(_insertionPos distance ([_x, "center"] call ALIVE_fnc_hashGet))},
+                                        "ASCEND"
+                                    ] call ALiVE_fnc_SortBy;
+
+                                    private _candidate = _sortedFrontline select 0;
+                                    private _candidateDist = _insertionPos distance ([_candidate, "center"] call ALIVE_fnc_hashGet);
+
+                                    // Only use if meaningfully far from insertion point
+                                    // (avoids swapping to an objective that is essentially
+                                    // co-located with the base)
+                                    if (_candidateDist > 500) then {
+                                        _frontlineObjective = _candidate;
+                                        _frontlineDist = _candidateDist;
+
+                                        if (_debug) then {
+                                            ["ML - onDemandAnalysis: Using non-reserve objective as destination. Distance: %1m",
+                                                _frontlineDist] call ALiVE_fnc_dump;
+                                        };
+                                    } else {
+                                        if (_debug) then {
+                                            ["ML - onDemandAnalysis: Closest non-reserve objective too close (%1m), falling back to mil clusters.",
+                                                _candidateDist] call ALiVE_fnc_dump;
+                                        };
+                                    };
+                                };
+                            };
+
+                            // Second preference: if no suitable OPCOM objective found,
+                            // fall back to mil clusters sorted by distance from insertion
+                            if (isNil "_frontlineObjective" || {_frontlineDist <= 500}) then {
+
+                                if (count(ALIVE_clustersMil select 2) > 0) then {
+
+                                    private _sortedMilClusters = [
+                                        ALIVE_clustersMil select 2, [],
+                                        {(_insertionPos distance ([_x, "center"] call ALIVE_fnc_hashGet))},
+                                        "ASCEND"
+                                    ] call ALiVE_fnc_SortBy;
+
+                                    // Walk through sorted clusters to find one that is
+                                    // far enough away to be a meaningful destination
+                                    {
+                                        private _clusterDist = _insertionPos distance ([_x, "center"] call ALIVE_fnc_hashGet);
+                                        if (_clusterDist > 500) exitWith {
+                                            _frontlineObjective = _x;
+                                            _frontlineDist = _clusterDist;
+                                        };
+                                    } forEach _sortedMilClusters;
+
+                                    if (_debug) then {
+                                        if (!isNil "_frontlineObjective" && {_frontlineDist > 500}) then {
+                                            ["ML - onDemandAnalysis: Using mil cluster as destination. Distance: %1m",
+                                                _frontlineDist] call ALiVE_fnc_dump;
+                                        } else {
+                                            ["ML - onDemandAnalysis: WARNING - No suitable mil cluster found beyond 500m. Keeping original destination."] call ALiVE_fnc_dump;
+                                        };
+                                    };
+                                };
+                            };
+
+                            // Apply the frontline objective as the primary reinforcement
+                            // destination if we found a valid one
+                            if (!isNil "_frontlineObjective" && {_frontlineDist > 500}) then {
+                                _primaryReinforcementObjective = _frontlineObjective;
+
+                                // Recalculate reinforcement type based on distance
+                                // Long distances favour air delivery, short favour ground
+                                _reinforcementType = switch (true) do {
+                                    case (_frontlineDist > 3000): { "AIR" };
+                                    case (_frontlineDist > 1500): { "HELI" };
+                                    default { "DROP" };
+                                };
+
+                                ["ML - onDemandAnalysis: Single objective scenario resolved. Destination set to frontline at %1m. Type: %2",
+                                    _frontlineDist, _reinforcementType] call ALiVE_fnc_dump;
+                            } else {
+                                ["ML - onDemandAnalysis: WARNING - Could not resolve single objective scenario. Units may be delivered to insertion point."] call ALiVE_fnc_dump;
+                            };
+                        };
+                        // -----------------------------------------------------------------
+                        // END single objective guard
+                        // -----------------------------------------------------------------
 
                         }else{
 
                             // no objectives nothing available
                             _available = false;
-                        }
+                        };
 
                     }else{
 
@@ -2068,12 +3037,381 @@ switch(_operation) do {
                         _paraDrop = false;
                         if(_playersInRange > 0) then {
                             _paraDrop = true;
-
                             _remotePosition = [_reinforcementPosition, 2000] call ALIVE_fnc_getPositionDistancePlayers;
-                        }else{
-                            _remotePosition = _reinforcementPosition;
                         };
 
+                        // -----------------------------------------------------------------
+                        // -----------------------------------------------------------------
+                        // HELI_INSERT departure base and destination selection.
+                        //
+                        // Rules:
+                        // 1. Helicopters must depart from a friendly held objective
+                        //    that is DIFFERENT from the delivery destination.
+                        // 2. If only one friendly objective is held, helicopter
+                        //    insertion is not tactically viable - cancel and do nothing.
+                        //    Do NOT substitute another delivery type.
+                        // 3. If multiple friendly objectives exist, pick the one
+                        //    furthest from the destination as the departure base
+                        //    so helicopters fly the longest meaningful route.
+                        // 4. Override the delivery destination with the best scored
+                        //    objective from findBestDeliveryObjective.
+                        // -----------------------------------------------------------------
+                        if (_eventType == "HELI_INSERT") then {
+
+                            // Get all friendly held objectives
+                            private _allObjectives = [_logic, "objectives"] call MAINCLASS;
+                            if (count _allObjectives > 0) then {
+                                _allObjectives = _allObjectives select 0;
+                            };
+
+                            // Validate held objectives using multiple criteria:
+                            // 1. tacom_state must be "reserve" (OPCOM assignment)
+                            // 2. At least one assigned section profile must still exist
+                            //    (confirms OPCOM units haven't been wiped out)
+                            // 3. No more than 3 enemy units within 300m
+                            //    (confirms not currently enemy-occupied)
+                            private _heldObjectives = [];
+                            {
+                                private _obj = _x;
+                                private _objState = "";
+                                if ("tacom_state" in (_obj select 1)) then {
+                                    _objState = [_obj, "tacom_state", "none"] call ALIVE_fnc_hashGet;
+                                };
+
+                                if (_objState == "reserve") then {
+
+                                    // Check section profiles - at least one must still be registered
+                                    private _section = [_obj, "section", []] call ALIVE_fnc_hashGet;
+                                    private _hasAliveProfiles = false;
+                                    if (count _section > 0) then {
+                                        {
+                                            private _profile = [ALIVE_profileHandler, "getProfile", _x] call ALIVE_fnc_profileHandler;
+                                            if (!isNil "_profile") exitWith { _hasAliveProfiles = true; };
+                                        } forEach _section;
+                                    } else {
+                                        // No section assigned yet - trust tacom_state alone
+                                        _hasAliveProfiles = true;
+                                    };
+
+                                    if (_hasAliveProfiles) then {
+
+                                        // Check for enemy presence near the objective
+                                        private _objPos = [_obj, "center"] call ALIVE_fnc_hashGet;
+                                        private _sideObj = [_side] call ALIVE_fnc_sideTextToObject;
+                                        private _nearUnits = _objPos nearEntities [["Man","Car","Tank"], 300];
+                                        private _enemyNear = _nearUnits select { side _x != _sideObj && side _x != civilian };
+
+                                        if (count _enemyNear < 3) then {
+                                            _heldObjectives pushback _obj;
+                                        } else {
+                                            if (_debug) then {
+                                                ["ML - HELI_INSERT: Objective at %1 has tacom_state=reserve but %2 enemy units within 300m - treating as lost",
+                                                    _objPos, count _enemyNear] call ALiVE_fnc_dump;
+                                            };
+                                        };
+
+                                    } else {
+                                        if (_debug) then {
+                                            ["ML - HELI_INSERT: Objective at %1 has tacom_state=reserve but all section profiles gone - treating as lost",
+                                                [_obj, "center"] call ALIVE_fnc_hashGet] call ALiVE_fnc_dump;
+                                        };
+                                    };
+                                };
+                            } forEach _allObjectives;
+
+                            if (_debug) then {
+                                ["ML - HELI_INSERT: Found %1 validated friendly held objectives (tacom_state=reserve, profiles alive, no enemy presence):",
+                                    count _heldObjectives] call ALiVE_fnc_dump;
+                                {
+                                    private _objPos   = [_x, "center"] call ALIVE_fnc_hashGet;
+                                    private _objID    = [_x, "objectiveID"] call ALIVE_fnc_hashGet;
+                                    private _objState = [_x, "tacom_state", "none"] call ALIVE_fnc_hashGet;
+                                    private _nearLocName = [_objPos] call ALIVE_fnc_taskGetNearestLocationName;
+                                    ["ML - HELI_INSERT: Held objective %1 near %2 at %3 tacom_state=%4",
+                                        _objID, _nearLocName, _objPos, _objState] call ALiVE_fnc_dump;
+
+                                    // Temporary marker - auto-deletes after 3 minutes
+                                    [_objPos, _objID] spawn {
+                                        private _pos   = _this select 0;
+                                        private _id    = _this select 1;
+                                        private _mName = format ["ML_HELD_%1_%2", _id, time];
+                                        private _m = createMarker [_mName, _pos];
+                                        _m setMarkerShape "ICON";
+                                        _m setMarkerType "mil_flag";
+                                        _m setMarkerColor "ColorGreen";
+                                        _m setMarkerSize [0.6, 0.6];
+                                        _m setMarkerText format ["HELD: %1", _id];
+                                        sleep 180;
+                                        deleteMarker _mName;
+                                    };
+                                } forEach _heldObjectives;
+                            };
+
+                            // Rule 2: Fewer than 2 validated held objectives - heli insert
+                            // not yet viable. Keep event in requested state and re-check
+                            // next monitor cycle. Fall back to ground convoy after timeout.
+                            if (count _heldObjectives <= 1) then {
+
+                                private _heliWaitIterations = _eventStateData param [1, 0]; if (isNil "_heliWaitIterations" || typeName _heliWaitIterations != "SCALAR") then { _heliWaitIterations = 0; };
+                                _heliWaitIterations = _heliWaitIterations + 1;
+                                _eventStateData set [1, _heliWaitIterations];
+                                [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                                [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+
+                                // ~33 minutes at 10s monitor interval
+                                private _heliWaitMax = 200;
+
+                                if (_heliWaitIterations >= _heliWaitMax) then {
+                                    ["ML - HELI_INSERT: Timeout waiting for valid held objectives (%1 cycles). Falling back to ground convoy for event %2.",
+                                        _heliWaitIterations, _eventID] call ALiVE_fnc_dump;
+                                    _eventType = "STANDARD";
+                                    // Reset stateData so ground convoy path starts clean
+                                    _eventStateData set [1, 0];
+                                    [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                                    // Fall through - _eventType is now STANDARD and will
+                                    // be handled by the profile creation below
+                                } else {
+                                    if (_debug) then {
+                                        ["ML - HELI_INSERT: Only %1 validated held objective(s). Waiting for more to be captured. Cycle %2/%3.",
+                                            count _heldObjectives, _heliWaitIterations, _heliWaitMax] call ALiVE_fnc_dump;
+                                    };
+                                    // Exit this monitor cycle - re-evaluate next time
+                                };
+
+                            };
+
+                            if (_eventType == "HELI_INSERT") then { // still heli after held check
+
+                                // Held objectives check passed - clear that wait counter
+                                if (count _eventStateData > 1) then {
+                                    _eventStateData set [1, 0];
+                                    [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                                };
+
+                                // Find the likely departure base (held obj furthest from event position)
+                                // before scoring so we can exclude it from valid destinations.
+                                // We re-run this selection properly after destination is confirmed.
+                                private _candidateDeparturePos = [];
+                                private _candidateMaxDist = 0;
+                                {
+                                    private _objPos = [_x, "center"] call ALIVE_fnc_hashGet;
+                                    private _d = _objPos distance _eventPosition;
+                                    if (_d > 500 && _d > _candidateMaxDist) then {
+                                        _candidateMaxDist = _d;
+                                        _candidateDeparturePos = _objPos;
+                                    };
+                                } forEach _heldObjectives;
+
+                                // Rule 4: Find the best scored delivery destination,
+                                // excluding both the insertion point and the likely departure base
+                                private _scoredDestPos = [];
+                                if (count _allObjectives > 0) then {
+                                    _scoredDestPos = [_logic, "findBestDeliveryObjective", [
+                                        _allObjectives,
+                                        _eventPosition,
+                                        _eventFaction,
+                                        _side,
+                                        _candidateDeparturePos
+                                    ]] call MAINCLASS;
+                                };
+
+                                if (count _scoredDestPos > 0) then {
+                                    private _scoredDist = _scoredDestPos distance _reinforcementPosition;
+
+                                    if (_scoredDist > 500) then {
+                                    if (_debug) then {
+                                            private _destLocName = [_scoredDestPos] call ALIVE_fnc_taskGetNearestLocationName;
+                                            ["ML - HELI_INSERT: Delivery destination set to scored objective near %1 at %2 (%3m from base)",
+                                                _destLocName, _scoredDestPos, _scoredDist] call ALiVE_fnc_dump;
+                                        };
+                                        _eventPosition = _scoredDestPos;
+                                        // Persist the updated destination into the event data
+                                        // so all subsequent states (heliTransportStart etc.) use it
+                                        _eventData set [0, _eventPosition];
+                                        [_event, "data", _eventData] call ALIVE_fnc_hashSet;
+                                        // Clear all heli wait counters so the guard doesn't
+                                        // block profile creation on this and subsequent cycles
+                                        _eventStateData set [1, 0];
+                                        _eventStateData set [2, 0];
+                                        _eventStateData set [3, 0];
+                                        [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                                    } else {
+                                        // Scored destination too close to departure base -
+                                        // treat as no valid destination found
+                                        _scoredDestPos = [];
+                                    };
+                                };
+
+                                // No valid delivery destination yet - wait for OPCOM to
+                                // capture objectives before committing to heli insert.
+                                if (count _scoredDestPos == 0) then {
+                                    private _heliDestWaitIterations = _eventStateData param [2, 0]; if (isNil "_heliDestWaitIterations" || typeName _heliDestWaitIterations != "SCALAR") then { _heliDestWaitIterations = 0; };
+                                    _heliDestWaitIterations = _heliDestWaitIterations + 1;
+                                    _eventStateData set [2, _heliDestWaitIterations];
+                                    [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                                    [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+
+                                    private _heliDestWaitMax = 200;
+
+                                    if (_heliDestWaitIterations >= _heliDestWaitMax) then {
+                                        ["ML - HELI_INSERT: Timeout waiting for valid delivery destination (%1 cycles). Falling back to ground convoy for event %2.",
+                                            _heliDestWaitIterations, _eventID] call ALiVE_fnc_dump;
+                                        _eventType = "STANDARD";
+                                        _eventStateData set [2, 0];
+                                        [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                                        // Fall through to profile creation as STANDARD
+                                    } else {
+                                        if (_debug) then {
+                                            ["ML - HELI_INSERT: No valid delivery destination found yet. Waiting for objectives to be captured. Cycle %1/%2.",
+                                                _heliDestWaitIterations, _heliDestWaitMax] call ALiVE_fnc_dump;
+                                        };
+                                        // Exit this monitor cycle - re-evaluate next time
+                                    };
+                                };
+
+                                if (_eventType == "HELI_INSERT") then { // still heli after destination check
+
+                                // Rule 1 and 3: Pick the held objective furthest from the
+                                // delivery destination as the helicopter departure base.
+                                // This gives the longest meaningful flight path.
+                                private _departureObjective = nil;
+                                private _maxDist = 0;
+
+                                {
+                                    private _objPos = [_x, "center"] call ALIVE_fnc_hashGet;
+                                    private _distToDest = _objPos distance _eventPosition;
+
+                                    // Must be a different location from the destination
+                                    if (_distToDest > 500 && _distToDest > _maxDist) then {
+                                        _maxDist = _distToDest;
+                                        _departureObjective = _x;
+                                    };
+                                } forEach _heldObjectives;
+
+                                if (isNil "_departureObjective") then {
+
+                                    // All held objectives too close to destination - wait
+                                    private _heliBaseWaitIterations = _eventStateData param [3, 0]; if (isNil "_heliBaseWaitIterations" || typeName _heliBaseWaitIterations != "SCALAR") then { _heliBaseWaitIterations = 0; };
+                                    _heliBaseWaitIterations = _heliBaseWaitIterations + 1;
+                                    _eventStateData set [3, _heliBaseWaitIterations];
+                                    [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                                    [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+
+                                    private _heliBaseWaitMax = 100;
+
+                                    if (_heliBaseWaitIterations >= _heliBaseWaitMax) then {
+                                        ["ML - HELI_INSERT: Timeout waiting for departure base far enough from destination (%1 cycles). Falling back to ground convoy for event %2.",
+                                            _heliBaseWaitIterations, _eventID] call ALiVE_fnc_dump;
+                                        _eventType = "STANDARD";
+                                        _eventStateData set [3, 0];
+                                        [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                                    } else {
+                                        if (_debug) then {
+                                            ["ML - HELI_INSERT: No held objective far enough from destination for departure base. Waiting. Cycle %1/%2.",
+                                                _heliBaseWaitIterations, _heliBaseWaitMax] call ALiVE_fnc_dump;
+                                        };
+                                        // Exit this monitor cycle - re-evaluate next time
+                                    };
+
+                                } else {
+
+
+                                    // Override the reinforcement position with the
+                                    // selected departure objective
+                                    private _departurePos = [_departureObjective, "center"] call ALIVE_fnc_hashGet;
+
+                                    if (_debug) then {
+                                        private _baseLocName = [_departurePos] call ALIVE_fnc_taskGetNearestLocationName;
+                                        private _dstLocName = [_eventPosition] call ALIVE_fnc_taskGetNearestLocationName;
+                                        ["ML - HELI_INSERT: Departure base near %1 at %2 (%3m from destination). Destination near %4 at %5",
+                                            _baseLocName, _departurePos, _maxDist, _dstLocName, _eventPosition] call ALiVE_fnc_dump;
+                                    };
+
+                                    // Update reinforcement position to the chosen departure base
+                                    _reinforcementPosition = _departurePos;
+
+                                    // Find a clear LZ at the departure base for helicopter spawning
+                                    _remotePosition = [_logic, "prepareHelicopterLZ", [
+                                        _reinforcementPosition getPos [random 200, random 360], 100
+                                    ]] call MAINCLASS;
+
+                                    if (_debug) then {
+                                        ["ML - HELI_INSERT: Heli spawn LZ: %1 Departure base: %2 Destination: %3 Flight dist: %4m",
+                                            _remotePosition, _reinforcementPosition, _eventPosition,
+                                            _remotePosition distance _eventPosition] call ALiVE_fnc_dump;
+                                    };
+                                }; // end departure base else
+
+                                }; // end if (_eventType == "HELI_INSERT") destination check
+
+                            }; // end if (_eventType == "HELI_INSERT") held check
+
+                        } else {
+                            if (!_paraDrop) then {
+                                _remotePosition = _reinforcementPosition;
+                            };
+                        };
+                        // -----------------------------------------------------------------
+
+
+                        // Guard: if event is in a wait state (no destination or departure base
+                        // found yet) or was cancelled, skip profile creation this cycle.
+                        // The event remains in the queue with state="requested" and will be
+                        // re-evaluated on the next monitor cycle.
+                        private ["_activeCheck","_eventStillActive","_sd","_w1","_w2","_w3","_waitingForHeli"];
+                        _activeCheck = [_eventQueue, _eventID] call ALIVE_fnc_hashGet;
+                        _eventStillActive = !isNil "_activeCheck";
+                        _sd = _eventStateData;
+                        _w1 = _sd param [1, 0]; if (isNil "_w1" || typeName _w1 != "SCALAR") then { _w1 = 0; };
+                        _w2 = _sd param [2, 0]; if (isNil "_w2" || typeName _w2 != "SCALAR") then { _w2 = 0; };
+                        _w3 = _sd param [3, 0]; if (isNil "_w3" || typeName _w3 != "SCALAR") then { _w3 = 0; };
+                        _waitingForHeli = _eventStillActive && ((_w1 > 0 && _w1 < 200) || (_w2 > 0 && _w2 < 200) || (_w3 > 0 && _w3 < 100));
+
+                        if (_debug) then {
+                            if (!_eventStillActive) then {
+                                ["ML - requested: Event %1 was cancelled before profile creation, skipping.", _eventID] call ALiVE_fnc_dump;
+                            } else {
+                                if (_waitingForHeli) then {
+                                    ["ML - requested: Event %1 waiting for valid heli conditions, skipping profile creation this cycle.", _eventID] call ALiVE_fnc_dump;
+                                };
+                            };
+                        };
+
+                        if (_eventStillActive && !_waitingForHeli) then {
+
+                        // Throttle: limit concurrent HELI_INSERT missions to avoid
+                        // flooding the AO with helicopters from the same destination
+                        private _heliThrottleExceeded = false;
+                        if (_eventType == "HELI_INSERT") then {
+                            private _activeHeliEvents = 0;
+                            {
+                                private _qEvent = _x;
+                                private _qState = [_qEvent, "state"] call ALIVE_fnc_hashGet;
+                                private _qID    = [_qEvent, "id"]    call ALIVE_fnc_hashGet;
+                                private _qData  = [_qEvent, "data"]  call ALIVE_fnc_hashGet;
+                                private _qType  = if (count _qData > 4) then { _qData select 4 } else { "" };
+                                if (_qID != _eventID && _qType == "HELI_INSERT") then {
+                                    // Count both HELI_INSERT-specific states AND standard transport
+                                    // states, since HELI_INSERT can fall back to the STANDARD path
+                                    if (_qState in [
+                                        "transportLoad","transportLoadWait","transportStart","transportTravel",
+                                        "heliTransportStart","heliTransport","heliTransportUnloadWait",
+                                        "heliTransportComplete","heliTransportReturn","heliTransportReturnWait"
+                                    ]) then {
+                                        _activeHeliEvents = _activeHeliEvents + 1;
+                                    };
+                                };
+                            } forEach (_eventQueue select 2);
+                            if (_activeHeliEvents >= 2) then {
+                                _heliThrottleExceeded = true;
+                                if (_debug) then {
+                                    ["ML - HELI_INSERT: Throttle active - %1 heli missions in cycle. Deferring event %2.",
+                                        _activeHeliEvents, _eventID] call ALiVE_fnc_dump;
+                                };
+                            };
+                        };
+
+                        if (!_heliThrottleExceeded) then {
 
                         // wait time complete create profiles
                         // get groups according to requested force makeup
@@ -2113,15 +3451,73 @@ switch(_operation) do {
                         _groupCount = count _motorisedGroups;
                         _totalCount = _totalCount + _groupCount;
 
+                        // FIX: Track skipped motorised groups
+                        private _motorisedSkipped = 0;
+
+                        for "_i" from 0 to _groupCount -1 do {
+
+                            _group = _motorisedGroups select _i;
+
+                            if (_eventType == "HELI_INSERT") then {
+                                _position = [_logic, "prepareHelicopterLZ", [
+                                    _reinforcementPosition getPos [random(200), random(360)], 60
+                                ]] call MAINCLASS;
+                                if (_debug) then {
+                                    ["ML - HELI_INSERT motorised pickup LZ prepared at %1", _position] call ALiVE_fnc_dump;
+                                };
+                            } else {
+                                _position = _reinforcementPosition getPos [random(200), random(360)];
+                                if (_paraDrop && _eventType != "HELI_INSERT") then {
+                                    _position set [2,PARADROP_HEIGHT];
+                                };
+                            };
+
+                            if!(surfaceIsWater _position) then {
+
+                                _profiles = [_group, _position, random(360), false, _eventFaction, true] call ALIVE_fnc_createProfilesFromGroupConfig;
+
+                                _profileIDs = [];
+                                {
+                                    _profileID = _x select 2 select 4;
+                                    _profileIDs pushback _profileID;
+                                } forEach _profiles;
+
+                                _motorisedProfiles pushback _profileIDs;
+
+                            } else {
+                                _groupCount = _groupCount - 1;
+                                _totalCount = _totalCount - 1;
+                                _motorisedSkipped = _motorisedSkipped + 1;
+
+                                if (_debug) then {
+                                    ["ML - Motorised group %1 skipped (water at position). Running skipped count: %2",
+                                        _group, _motorisedSkipped] call ALiVE_fnc_dump;
+                                };
+                            };
+                        };
+
+                        if (_debug) then {
+                            ["ML - Motorised groups created: %1 skipped: %2 profiles: %3",
+                                _groupCount, _motorisedSkipped, count _motorisedProfiles] call ALiVE_fnc_dump;
+                        };
+
                         // create profiles
                         for "_i" from 0 to _groupCount -1 do {
 
                             _group = _motorisedGroups select _i;
 
-                            _position = _reinforcementPosition getPos [random(200), random(360)];
-
-                            if(_paraDrop && _eventType != "HELI_INSERT") then {
-                                _position set [2,PARADROP_HEIGHT];
+                            if (_eventType == "HELI_INSERT") then {
+                                _position = [_logic, "prepareHelicopterLZ", [
+                                    _reinforcementPosition getPos [random(200), random(360)], 60
+                                ]] call MAINCLASS;
+                                if (_debug) then {
+                                    ["ML - HELI_INSERT motorised pickup LZ prepared at %1", _position] call ALiVE_fnc_dump;
+                                };
+                            } else {
+                                _position = _reinforcementPosition getPos [random(200), random(360)];
+                                if (_paraDrop && _eventType != "HELI_INSERT") then {
+                                    _position set [2,PARADROP_HEIGHT];
+                                };
                             };
 
                             if!(surfaceIsWater _position) then {
@@ -2230,8 +3626,14 @@ switch(_operation) do {
                                             [_slingloadProfile, "vehicleClassSling"] call ALiVE_fnc_hashRem;
 
                                             // setup slingloading
-                                            _position = _reinforcementPosition getPos [random(200), random(360)];
+                                            _position = [_logic, "findHelicopterLandingPos", [
+                                                _reinforcementPosition, 50, 200
+                                            ]] call MAINCLASS;
                                             _position set [2,PARADROP_HEIGHT];
+                                            if (_debug) then {
+                                                ["ML - HELI_INSERT slingload heli spawn pos: %1 class: %2",
+                                                _position, _vehicleClass] call ALiVE_fnc_dump;
+                                            };
 
                                             // Create slingloading heli (slingloading another profile!)
                                             _profiles = [_vehicleClass,_side,_eventFaction,"CAPTAIN",_position,random(360),false,_eventFaction,true,true,[], [[_x], []]] call ALIVE_fnc_createProfilesCrewedVehicle;
@@ -2260,6 +3662,18 @@ switch(_operation) do {
                                             [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
 
                                             _totalCount = _totalCount + 1;
+                                            
+                                            // Fuel watchdog for slingload transport heli
+                                            [_logic, "spawnHelicopterFuelWatchdog", [
+                                                _profiles select 0 select 2 select 4,
+                                                _reinforcementPosition,
+                                                _eventFaction
+                                            ]] call MAINCLASS;
+                                            if (_debug) then {
+                                                ["ML - HELI_INSERT slingload watchdog started for profile %1",
+                                                    _profiles select 0 select 2 select 4] call ALiVE_fnc_dump;
+                                            };
+                                            
                                         };
 
                                     } foreach _groupProfile;
@@ -2290,19 +3704,28 @@ switch(_operation) do {
                         _totalCount = _totalCount + _groupCount;
 
                         // create profiles
+                        // FIX: Track skipped groups separately so _infantryProfiles
+                        // index stays in sync with the heli transport loop below.
+                        private _infantrySkipped = 0;
 
                         for "_i" from 0 to _groupCount -1 do {
 
                             _group = _infantryGroups select _i;
 
-                            _position = _reinforcementPosition getPos [random(200), random(360)];
-
                             if(_paraDrop) then {
-
                                 if(_eventType == "HELI_INSERT") then {
                                     _position = _remotePosition;
                                 }else{
+                                    _position = _reinforcementPosition getPos [random(200), random(360)];
                                     _position set [2,PARADROP_HEIGHT];
+                                };
+                            } else {
+                                if (_eventType == "HELI_INSERT") then {
+                                    // Spawn at departure base - position will be overridden
+                                    // to the specific pickup LZ during heli assignment below
+                                    _position = _remotePosition;
+                                } else {
+                                    _position = _reinforcementPosition getPos [random(200), random(360)];
                                 };
                             };
 
@@ -2321,9 +3744,20 @@ switch(_operation) do {
                             } else {
                                 _groupCount = _groupCount - 1;
                                 _totalCount = _totalCount - 1;
+                                _infantrySkipped = _infantrySkipped + 1;
+
+                                if (_debug) then {
+                                    ["ML - Infantry group %1 skipped (water at position). Running skipped count: %2",
+                                        _group, _infantrySkipped] call ALiVE_fnc_dump;
+                                };
                             };
                         };
 
+                        if (_debug) then {
+                            ["ML - Infantry groups created: %1 skipped: %2 profiles: %3",
+                                _groupCount, _infantrySkipped, count _infantryProfiles] call ALiVE_fnc_dump;
+                        };
+                        
                         [_eventCargoProfiles, "infantry", _infantryProfiles] call ALIVE_fnc_hashSet;
 
                         if(_eventType == "HELI_INSERT") then {
@@ -2344,10 +3778,20 @@ switch(_operation) do {
 
                                 for "_i" from 0 to _groupCount -1 do {
 
-                                    _position = _remotePosition getPos [random(200), random(360)];
+                                    private _pickupLZPos = [_logic, "prepareHelicopterLZ", [
+                                        _remotePosition getPos [random(200), random(360)], 80
+                                    ]] call MAINCLASS;
 
-                                    if(_paraDrop) then {
+                                    if (_paraDrop) then {
+                                        _position = +_pickupLZPos;
                                         _position set [2,PARADROP_HEIGHT];
+                                    } else {
+                                        _position = _pickupLZPos;
+                                    };
+
+                                    if (_debug) then {
+                                        ["ML - HELI_INSERT infantry [%1/%2] pickup LZ: %3",
+                                            _i + 1, _groupCount, _pickupLZPos] call ALiVE_fnc_dump;
                                     };
 
                                     if(count _transportGroups > 0) then {
@@ -2359,22 +3803,45 @@ switch(_operation) do {
                                         _transportProfiles pushback (_profiles select 0 select 2 select 4);
                                         _transportVehicleProfiles pushback (_profiles select 1 select 2 select 4);
 
-                                        if(count _infantryProfiles >= _i) then {
+                                        if(count _infantryProfiles > _i) then {
                                             if(count (_infantryProfiles select _i) > 0) then {
-                                                _infantryProfileID = _infantryProfiles select _i select 0;
-                                                if!(isNil "_infantryProfileID") then {
-                                                    _infantryProfile = [ALIVE_profileHandler, "getProfile", _infantryProfileID] call ALIVE_fnc_profileHandler;
-                                                    if!(isNil "_infantryProfile") then {
-                                                        [_infantryProfile,_profiles select 1] call ALIVE_fnc_createProfileVehicleAssignment;
+                                                // Assign ALL entities in this infantry group to the transport vehicle
+                                                {
+                                                    if!(isNil "_x") then {
+                                                        _infantryProfile = [ALIVE_profileHandler, "getProfile", _x] call ALIVE_fnc_profileHandler;
+                                                        if!(isNil "_infantryProfile") then {
+                                                            [_infantryProfile,_profiles select 1] call ALIVE_fnc_createProfileVehicleAssignment;
+                                                            [_infantryProfile, "position", _pickupLZPos] call ALIVE_fnc_profileEntity;
+                                                        };
                                                     };
-                                                };
+                                                } forEach (_infantryProfiles select _i);
                                             };
                                         };
 
-                                        private _moveToInsertionWaypointPos = [_reinforcementPosition, random 50, random 360] call CBA_fnc_randPos;
-                                        _profileWaypoint = [_moveToInsertionWaypointPos, 100, "MOVE", "LIMITED", 300, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                                        // Give heli a loiter waypoint at the pickup LZ first,
+                                        // then the destination - so infantry have time to board
+                                        // before the heli departs
+                                        private _loiterWaypoint = [_pickupLZPos, 10, "MOVE", "LIMITED", 60, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
                                         _profile = _profiles select 0;
+                                        [_profile, "addWaypoint", _loiterWaypoint] call ALIVE_fnc_profileEntity;
+
+                                        private _destPos = [_logic, "findHelicopterLandingPos", [
+                                            _eventPosition, 200, 600
+                                        ]] call MAINCLASS;
+                                        _profileWaypoint = [_destPos, 30, "MOVE", "LIMITED", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
                                         [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
+
+                                        if (_debug) then {
+                                            ["ML - HELI_INSERT infantry transport [%1] dest waypoint: %2",
+                                                _i + 1, _destPos] call ALiVE_fnc_dump;
+                                        };
+
+                                        // Fuel watchdog for infantry transport heli
+                                        [_logic, "spawnHelicopterFuelWatchdog", [
+                                            _profiles select 0 select 2 select 4,
+                                            _reinforcementPosition,
+                                            _eventFaction
+                                        ]] call MAINCLASS;
 
                                     };
 
@@ -2536,7 +4003,9 @@ switch(_operation) do {
 
                             for "_i" from 0 to _eventForcePlane -1 do {
 
-                                _position = _remotePosition getPos [random(200), random(360)];
+                                _position = [_logic, "findHelicopterLandingPos", [
+                                    _remotePosition, 50, 250
+                                ]] call MAINCLASS;
                                 _position set [2,1000];
 
                                 if(count _planeClasses > 0) then {
@@ -2553,9 +4022,24 @@ switch(_operation) do {
 
                                     _planeProfiles pushback _profileIDs;
 
-                                    _profileWaypoint = [_reinforcementPosition, 100, "MOVE", "LIMITED", 300, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                                    private _heliDestPos = [_logic, "findHelicopterLandingPos", [
+                                        _eventPosition, 200, 600
+                                    ]] call MAINCLASS;
+                                    _profileWaypoint = [_heliDestPos, 30, "MOVE", "LIMITED", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
                                     _profile = _profiles select 0;
                                     [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
+
+                                    if (_debug) then {
+                                        ["ML - Dedicated heli [%1] class %2 dest: %3",
+                                            _i + 1, _vehicleClass, _heliDestPos] call ALiVE_fnc_dump;
+                                    };
+
+                                    // Fuel watchdog for dedicated heli asset
+                                    [_logic, "spawnHelicopterFuelWatchdog", [
+                                        _profiles select 0 select 2 select 4,
+                                        _reinforcementPosition,
+                                        _eventFaction
+                                    ]] call MAINCLASS;
                                 }
                             };
 
@@ -2613,13 +4097,28 @@ switch(_operation) do {
 
                         // DEBUG -------------------------------------------------------------------------------------
                         if(_debug) then {
-                            ["ML - Profiles created: %1 ",_totalCount] call ALiVE_fnc_dump;
+                            ["ML - Profiles created total: %1", _totalCount] call ALiVE_fnc_dump;
+                            ["ML - Profile breakdown - Infantry groups: %1 Motorised groups: %2 Mechanised groups: %3 Armour groups: %4 Plane groups: %5 Heli groups: %6",
+                                count _infantryProfiles,
+                                count _motorisedProfiles,
+                                count _mechanisedProfiles,
+                                count _armourProfiles,
+                                count _planeProfiles,
+                                count _heliProfiles] call ALiVE_fnc_dump;
+                            ["ML - Transport profiles: %1 Transport vehicle profiles: %2",
+                                count _eventTransportProfiles,
+                                count _eventTransportVehiclesProfiles] call ALiVE_fnc_dump;
+                            ["ML - Force pool before deduction: %1 After deduction: %2",
+                                _forcePool, (_forcePool - _totalCount)] call ALiVE_fnc_dump;
                             switch(_eventType) do {
                                 case "STANDARD": {
                                     [_logic, "createMarker", [_reinforcementPosition,_eventFaction,"ML INSERTION"]] call MAINCLASS;
+                                    [_logic, "createMarker", [_eventPosition,_eventFaction,"ML DESTINATION"]] call MAINCLASS;
                                 };
                                 case "HELI_INSERT": {
-                                    [_logic, "createMarker", [_reinforcementPosition,_eventFaction,"ML INSERTION"]] call MAINCLASS;
+                                    [_logic, "createMarker", [_reinforcementPosition,_eventFaction,"ML BASE"]] call MAINCLASS;
+                                    [_logic, "createMarker", [_remotePosition,_eventFaction,"ML HELI SPAWN"]] call MAINCLASS;
+                                    [_logic, "createMarker", [_eventPosition,_eventFaction,"ML DESTINATION"]] call MAINCLASS;
                                 };
                                 case "AIRDROP": {
                                     [_logic, "createMarker", [_eventPosition,_eventFaction,"ML AIRDROP"]] call MAINCLASS;
@@ -2631,12 +4130,21 @@ switch(_operation) do {
 
                         if(_totalCount > 0) then {
 
-                            // remove the created group count
-                            // from the force pool
+                            // -----------------------------------------------------------------
+                            // FIX: Reconcile pool reservation made at request receipt.
+                            // Refund the reservation and deduct the true spawned count.
+                            // This prevents double-deduction.
+                            // -----------------------------------------------------------------
+                            private _reservation = [_event, "poolReservation", 0] call ALIVE_fnc_hashGet;
+                            _forcePool = _forcePool + _reservation;
                             _forcePool = _forcePool - _totalCount;
-                            // update the global force pool
-                            [ALIVE_MLGlobalRegistry,"updateGlobalForcePool",[_registryID,_forcePool]] call ALIVE_fnc_MLGlobalRegistry;
 
+                            if(_debug) then {
+                                ["ML - monitorEvent: Pool reconciliation. Reservation refunded: %1 True count deducted: %2 Remaining pool: %3",
+                                    _reservation, _totalCount, _forcePool] call ALiVE_fnc_dump;
+                            };
+
+                            [ALIVE_MLGlobalRegistry,"updateGlobalForcePool",[_registryID,_forcePool]] call ALIVE_fnc_MLGlobalRegistry;
                             switch(_eventType) do {
                                 case "STANDARD": {
 
@@ -2693,6 +4201,8 @@ switch(_operation) do {
                             [_logic, "removeEvent", _eventID] call MAINCLASS;
                         };
                     };
+                        }; // end if (!_heliThrottleExceeded)
+                        }; // end if (_eventStillActive && !_waitingForHeli)
                 }else{
                     // no insertion point available
                     // nothing to do so cancel...
@@ -2727,15 +4237,78 @@ switch(_operation) do {
                     [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
                 };
 
+                // Throttle: count all HELI_INSERT events in any active transport state
+                private _activeHeliCount = 0;
+                {
+                    private _qState = [_x, "state"] call ALIVE_fnc_hashGet;
+                    private _qID    = [_x, "id"]    call ALIVE_fnc_hashGet;
+                    private _qData  = [_x, "data"]  call ALIVE_fnc_hashGet;
+                    private _qType  = if (count _qData > 4) then { _qData select 4 } else { "" };
+                    if (_qID != _eventID && _qType == "HELI_INSERT") then {
+                        if (_qState in [
+                            "transportLoad","transportLoadWait","transportStart","transportTravel",
+                            "heliTransport","heliTransportUnloadWait","heliTransportComplete",
+                            "heliTransportReturn","heliTransportReturnWait"
+                        ]) then {
+                            _activeHeliCount = _activeHeliCount + 1;
+                        };
+                    };
+                } forEach (_eventQueue select 2);
+
+                if (_activeHeliCount >= 2) exitWith {
+                    // Stay in heliTransportStart - will retry next monitor cycle
+                    if (_debug) then {
+                        ["ML - heliTransportStart: Throttle - %1 events in flight, deferring event %2.",
+                            _activeHeliCount, _eventID] call ALiVE_fnc_dump;
+                    };
+                };
+
                 [_event, "finalDestination", _eventPosition getPos [random(DESTINATION_VARIANCE), random(360)]] call ALIVE_fnc_hashSet;
 
+                // Track assigned landing positions to prevent helis landing on top of each other
+                private _usedLandingPositions = [];
+
                 {
-                    _position = _eventPosition getPos [random(DESTINATION_VARIANCE), random(360)];
-                    _profileWaypoint = [_position, 100, "MOVE", "NORMAL", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                    private _destPos = [_logic, "findHelicopterLandingPos", [
+                        _eventPosition, 200, 600, _usedLandingPositions
+                    ]] call MAINCLASS;
+                    _usedLandingPositions pushback _destPos;
+                    _profileWaypoint = [_destPos, 200, "MOVE", "NORMAL", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
 
                     _profile = [ALIVE_profileHandler, "getProfile", _x] call ALIVE_fnc_profileHandler;
                     if!(isNil "_profile") then {
                         [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
+                        if (_debug) then {
+                            ["ML - heliTransportStart: Transport profile %1 waypoint -> %2", _x, _destPos] call ALiVE_fnc_dump;
+                        };
+
+                        // Spawn delivery watchdog for this transport heli
+                        private _vProfID = "";
+                        private _tIdx = _transportProfiles find _x;
+                        if (_tIdx >= 0 && _tIdx < count _eventTransportVehiclesProfiles) then {
+                            _vProfID = _eventTransportVehiclesProfiles select _tIdx;
+                        };
+                        if (_vProfID != "") then {
+                            private _returnPos = [_reinforcementPrimaryObjective, "center"] call ALIVE_fnc_hashGet;
+                            [_logic, "spawnHeliDeliveryWatchdog", [
+                                _x, _vProfID, _destPos, _returnPos, _debug
+                            ]] call MAINCLASS;
+                            if (_debug) then {
+                                ["ML - heliTransportStart: Delivery watchdog started for transport %1 vehicle %2", _x, _vProfID] call ALiVE_fnc_dump;
+                            };
+                        };
+                    } else {
+                        ["ML - heliTransportStart: WARNING transport profile %1 nil, removing from event.", _x] call ALiVE_fnc_dump;
+                        // Remove dead profile ID from transport lists to prevent downstream issues
+                        private _tIdx = _transportProfiles find _x;
+                        if (_tIdx >= 0) then {
+                            _transportProfiles deleteAt _tIdx;
+                            if (_tIdx < count _eventTransportVehiclesProfiles) then {
+                                _eventTransportVehiclesProfiles deleteAt _tIdx;
+                            };
+                        };
+                        [_event, "transportProfiles", _transportProfiles] call ALIVE_fnc_hashSet;
+                        [_event, "transportVehiclesProfiles", _eventTransportVehiclesProfiles] call ALIVE_fnc_hashSet;
                     };
 
                 } forEach _transportProfiles;
@@ -2752,23 +4325,41 @@ switch(_operation) do {
                 } forEach _infantryProfiles;
 
                 {
-                    _position = _eventPosition getPos [random(DESTINATION_VARIANCE), random(360)];
-                    _profileWaypoint = [_position, 100, "MOVE", "NORMAL", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                    private _destPos = [_logic, "findHelicopterLandingPos", [
+                        _eventPosition, 200, 600
+                    ]] call MAINCLASS;
+                    _profileWaypoint = [_destPos, 200, "MOVE", "NORMAL", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
 
                     _profile = [ALIVE_profileHandler, "getProfile", _x select 0] call ALIVE_fnc_profileHandler;
                     if!(isNil "_profile") then {
                         [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
+                        if (_debug) then {
+                            ["ML - heliTransportStart: Plane profile %1 waypoint -> %2",
+                                _x select 0, _destPos] call ALiVE_fnc_dump;
+                        };
+                    } else {
+                        ["ML - heliTransportStart: WARNING plane profile %1 nil, waypoint not assigned",
+                            _x select 0] call ALiVE_fnc_dump;
                     };
 
                 } forEach _planeProfiles;
 
                 {
-                    _position = _eventPosition getPos [random(DESTINATION_VARIANCE), random(360)];
-                    _profileWaypoint = [_position, 100, "MOVE", "NORMAL", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                    private _destPos = [_logic, "findHelicopterLandingPos", [
+                        _eventPosition, 200, 600
+                    ]] call MAINCLASS;
+                    _profileWaypoint = [_destPos, 200, "MOVE", "NORMAL", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
 
                     _profile = [ALIVE_profileHandler, "getProfile", _x select 0] call ALIVE_fnc_profileHandler;
                     if!(isNil "_profile") then {
                         [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
+                        if (_debug) then {
+                            ["ML - heliTransportStart: Heli profile %1 waypoint -> %2",
+                                _x select 0, _destPos] call ALiVE_fnc_dump;
+                        };
+                    } else {
+                        ["ML - heliTransportStart: WARNING heli profile %1 nil, waypoint not assigned",
+                            _x select 0] call ALiVE_fnc_dump;
                     };
 
                 } forEach _heliProfiles;
@@ -2815,10 +4406,7 @@ switch(_operation) do {
                 // once set time limit has passed
                 // if all units haven't reached objective
                 _waitTotalIterations = 200;
-                _waitIterations = 0;
-                if(count _eventStateData > 0) then {
-                    _waitIterations = _eventStateData select 0;
-                };
+                _waitIterations = _eventStateData param [0, 0]; if (isNil "_waitIterations" || typeName _waitIterations != "SCALAR") then { _waitIterations = 0; };
 
                 // check waypoints
                 // if all waypoints are complete
@@ -2843,11 +4431,36 @@ switch(_operation) do {
 
                             [_logic,"setHelicopterTravel",_profile] call MAINCLASS;
 
-                            _waypointsNotCompleted = _waypointsNotCompleted + 1;
-                        }else{
-                            _waypointsCompleted = _waypointsCompleted + 1;
+                            // If this transport has been hovering a long time without
+                            // completing its waypoint, force it to land
+                            if (_waitIterations > 20) then {
+                                [_logic, "forceHelicopterLanding", [_profile, _eventPosition]] call MAINCLASS;
 
+                                if (_debug) then {
+                                    ["ML - heliTransport: Transport profile %1 hover intervention after %2 iterations",
+                                        _x, _waitIterations] call ALiVE_fnc_dump;
+                                };
+                            };
+
+                            // Position-based fallback: if active heli is within 200m of
+                            // destination, treat waypoint as complete regardless
+                            private _heliActive = _profile select 2 select 1;
+                            if (_heliActive) then {
+                                private _heliObj = _profile select 2 select 10;
+                                if (!isNull _heliObj && alive _heliObj) then {
+                                    if (_heliObj distance _eventPosition < 200) then {
+                                        _completed = true;
+                                    };
+                                };
+                            };
+
+                        };
+
+                        if (_completed) then {
+                            _waypointsCompleted = _waypointsCompleted + 1;
                             [_logic,"unloadTransportHelicopter",[_event,_profile]] call MAINCLASS;
+                        } else {
+                            _waypointsNotCompleted = _waypointsNotCompleted + 1;
                         };
 
                     };
@@ -2890,11 +4503,36 @@ switch(_operation) do {
 
                             [_logic,"setHelicopterTravel",_profile] call MAINCLASS;
 
-                            _waypointsNotCompleted = _waypointsNotCompleted + 1;
-                        }else{
-                            _waypointsCompleted = _waypointsCompleted + 1;
+                            // If this transport has been hovering a long time without
+                            // completing its waypoint, force it to land
+                            if (_waitIterations > 20) then {
+                                [_logic, "forceHelicopterLanding", [_profile, _eventPosition]] call MAINCLASS;
 
+                                if (_debug) then {
+                                    ["ML - heliTransport: Transport profile %1 hover intervention after %2 iterations",
+                                        _x, _waitIterations] call ALiVE_fnc_dump;
+                                };
+                            };
+
+                            // Position-based fallback: if active heli is within 200m of
+                            // destination, treat waypoint as complete regardless
+                            private _heliActive = _profile select 2 select 1;
+                            if (_heliActive) then {
+                                private _heliObj = _profile select 2 select 10;
+                                if (!isNull _heliObj && alive _heliObj) then {
+                                    if (_heliObj distance _eventPosition < 200) then {
+                                        _completed = true;
+                                    };
+                                };
+                            };
+
+                        };
+
+                        if (_completed) then {
+                            _waypointsCompleted = _waypointsCompleted + 1;
                             [_logic,"unloadTransportHelicopter",[_event,_profile]] call MAINCLASS;
+                        } else {
+                            _waypointsNotCompleted = _waypointsNotCompleted + 1;
                         };
 
                     };
@@ -2954,7 +4592,7 @@ switch(_operation) do {
             case "heliTransportReturn": {
 
                 private _count = [_logic, "checkEvent", _event] call MAINCLASS;
-                if(_count == 0) exitWith {
+                if(_count == 0 && count _eventTransportProfiles == 0) exitWith {
                     // set state to event complete
                     [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
                     [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
@@ -2967,7 +4605,14 @@ switch(_operation) do {
 
                     private _eventDestination = [_event, "finalDestination"] call ALIVE_fnc_hashGet;
                     private _reinforcementPosition = [_reinforcementPrimaryObjective,"center"] call ALIVE_fnc_hashGet;
-                    private _returnDest = _reinforcementPosition getPos [1500, _eventDestination getDir _reinforcementPosition];
+                    // Guard against empty finalDestination
+                    private _returnDest = if (count _eventDestination > 1) then {
+                        // Bearing FROM destination TOWARD reinforcement position = egress direction
+                        private _egressDir = _eventDestination getDir _reinforcementPosition;
+                        _reinforcementPosition getPos [1500, _egressDir]
+                    } else {
+                        _reinforcementPosition getPos [1500, random 360]
+                    };
 
                     // #TODO: Change this so each helicopter peels off in the direction of it's offset from the eventDestination position
                     {
@@ -2994,6 +4639,9 @@ switch(_operation) do {
                     } forEach _eventTransportProfiles;
 
                     // set state to wait for return of transports
+                    // Reset stateData counter so heliTransportReturnWait starts at 0
+                    _eventStateData set [0, 0];
+                    [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
                     [_event, "state", "heliTransportReturnWait"] call ALIVE_fnc_hashSet;
                     [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
 
@@ -3015,10 +4663,7 @@ switch(_operation) do {
                 private ["_waitIterations","_waitTotalIterations"];
 
                 _waitTotalIterations = 15;
-                _waitIterations = 0;
-                if(count _eventStateData > 0) then {
-                    _waitIterations = _eventStateData select 0;
-                };
+                _waitIterations = _eventStateData param [0, 0]; if (isNil "_waitIterations" || typeName _waitIterations != "SCALAR") then { _waitIterations = 0; };
 
                 _waitIterations = _waitIterations + 1;
                 _eventStateData set [0, _waitIterations];
@@ -3084,10 +4729,7 @@ switch(_operation) do {
                 // once set time limit has passed
                 // if all units havent loaded up
                 _waitTotalIterations = 35;
-                _waitIterations = 0;
-                if(count _eventStateData > 0) then {
-                    _waitIterations = _eventStateData select 0;
-                };
+                _waitIterations = _eventStateData param [0, 0]; if (isNil "_waitIterations" || typeName _waitIterations != "SCALAR") then { _waitIterations = 0; };
 
                 // if there are transport vehicles available
 
@@ -3352,10 +4994,7 @@ switch(_operation) do {
                 // once set time limit has passed
                 // if all units haven't reached objective
                 _waitTotalIterations = 400;
-                _waitIterations = 0;
-                if(count _eventStateData > 0) then {
-                    _waitIterations = _eventStateData select 0;
-                };
+                _waitIterations = _eventStateData param [0, 0]; if (isNil "_waitIterations" || typeName _waitIterations != "SCALAR") then { _waitIterations = 0; };
 
                 // check waypoints
                 // if all waypoints are complete
@@ -3543,7 +5182,9 @@ switch(_operation) do {
                 private _count = [_logic, "checkEvent", _event] call MAINCLASS;
 
                 if (_count == 0) exitWith {
-                    // set state to event complete
+                    if (_debug) then {
+                        ["ML - heliTransportUnloadWait: No profiles remain, moving to eventComplete. Event: %1", _eventID] call ALiVE_fnc_dump;
+                    };
                     [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
                     [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
                 };
@@ -3552,11 +5193,7 @@ switch(_operation) do {
                 // once set time limit has passed
                 // if all units haven't reached objective
                 private _waitTotalIterations = 40;
-                private _waitIterations = 0;
-
-                if (count _eventStateData > 0) then {
-                    _waitIterations = _eventStateData select 0;
-                };
+                private _waitIterations = _eventStateData param [0, 0]; if (isNil "_waitIterations" || typeName _waitIterations != "SCALAR") then { _waitIterations = 0; };
 
                 private _infantryProfiles = [_eventCargoProfiles, "infantry"] call ALIVE_fnc_hashGet;
                 private _loadedUnits = 0;
@@ -3604,7 +5241,7 @@ switch(_operation) do {
 
 
                             if !(isNil "_vehicleProfile") then {
-                                _vehicleProfile call ALIVE_fnc_inspectHash; // TODO(marcel): Wrap in debug
+                                if (_debug) then { _vehicleProfile call ALIVE_fnc_inspectHash; };
 
                                 private _active = (_vehicleProfile select 2) select 1;
                                 private _vehicle = (_vehicleProfile select 2) select 10;
@@ -3635,8 +5272,17 @@ switch(_operation) do {
 
                 // If all inf units are unloaded and all payloads are unloaded, then complete
                 if ((_loadedUnits == 0 && _payloadUnloaded) || _waitIterations > _waitTotalIterations) then {
-                    // all unloaded
-                    // continue on to travel
+
+                    if (_debug) then {
+                        if (_waitIterations > _waitTotalIterations) then {
+                            ["ML - heliTransportUnloadWait: Timeout after %1 iterations. loadedUnits=%2 payloadUnloaded=%3. Forcing transition.",
+                                _waitIterations, _loadedUnits, _payloadUnloaded] call ALiVE_fnc_dump;
+                        } else {
+                            ["ML - heliTransportUnloadWait: All units unloaded after %1 iterations. Moving to heliTransportComplete.",
+                                _waitIterations] call ALiVE_fnc_dump;
+                        };
+                    };
+
                     _eventStateData set [0, 0];
                     [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
 
@@ -3647,6 +5293,11 @@ switch(_operation) do {
                     };
 
                     [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                } else {
+                    if (_debug) then {
+                        ["ML - heliTransportUnloadWait: Waiting for unload. iteration=%1/%2 loadedUnits=%3 payloadUnloaded=%4",
+                            _waitIterations, _waitTotalIterations, _loadedUnits, _payloadUnloaded] call ALiVE_fnc_dump;
+                    };
                 };
 
                 _waitIterations = _waitIterations + 1;
@@ -3664,8 +5315,15 @@ switch(_operation) do {
                 private ["_transportProfile","_inCargo","_cargoProfileID","_cargoProfile","_active","_inCommand","_commandProfileID","_commandProfile","_anyActive","_count"];
                 _count = [_logic, "checkEvent", _event] call MAINCLASS;
 
-                if (_count == 0) exitWith {
-                    // set state to event complete
+                if (_debug) then {
+                    ["ML - heliTransportComplete: Event %1 transportVehicles=%2 count=%3",
+                        _eventID, count _eventTransportVehiclesProfiles, _count] call ALiVE_fnc_dump;
+                };
+
+                if (_count == 0 && count _eventTransportVehiclesProfiles == 0) exitWith {
+                    if (_debug) then {
+                        ["ML - heliTransportComplete: No profiles remain, moving to eventComplete. Event: %1", _eventID] call ALiVE_fnc_dump;
+                    };
                     [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
                     [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
                 };
@@ -3677,12 +5335,20 @@ switch(_operation) do {
                         _transportProfile = [ALIVE_profileHandler, "getProfile", _x] call ALIVE_fnc_profileHandler;
                         if !(isNil "_transportProfile") then {
                             _active = _transportProfile select 2 select 1;
+                            private _vehicleObj = _transportProfile select 2 select 10;
+                            private _hasLiveVehicle = (!isNull _vehicleObj && alive _vehicleObj);
 
-                            if (_active) then {
+                            // Count as active if profile says so OR if there's a live vehicle object
+                            // (landed helis may briefly show inactive while their object still exists)
+                            if (_active || _hasLiveVehicle) then {
                                 _anyActive = _anyActive + 1;
                             } else {
-                                // if not active dispose of transport profiles
-                                _inCommand = _transportProfile select 2 select 8;
+                                // Truly virtual - no live object, safe to destroy
+                                if (_debug) then {
+                                    ["ML - heliTransportComplete: Transport vehicle %1 virtual (no live object), destroying profile.", _x] call ALiVE_fnc_dump;
+                                };
+
+                                private _inCommand = _transportProfile select 2 select 8;
 
                                 if (count _inCommand > 0) then {
                                     _commandProfileID = _inCommand select 0;
@@ -3690,27 +5356,22 @@ switch(_operation) do {
 
                                     if !(isNil "_commandProfile") then {
                                         [_commandProfile, "destroy"] call ALIVE_fnc_profileEntity;
-                                        //[ALIVE_profileHandler, "unregisterProfile", _commandProfile] call ALIVE_fnc_profileHandler;
                                     };
                                 };
 
                                 [_transportProfile, "destroy"] call ALIVE_fnc_profileVehicle;
-                                //[ALIVE_profileHandler, "unregisterProfile", _transportProfile] call ALIVE_fnc_profileHandler;
-
-                                [_logic, "setEventProfilesAvailable", _event] call MAINCLASS;
-
-                                // set state to event complete
-                                [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
-                                [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
                             };
                         };
                     } forEach _eventTransportVehiclesProfiles;
 
+                    // Now decide state based on whether any were active
                     if (_anyActive > 0) then {
+                        if (_debug) then {
+                            ["ML - heliTransportComplete: %1 transport vehicle(s) active, releasing cargo and sending helis RTB. Event: %2",
+                                _anyActive, _eventID] call ALiVE_fnc_dump;
+                        };
                         [_logic, "setEventProfilesAvailable", _event] call MAINCLASS;
 
-                        // there are active transport vehicles
-                        // send them back to insertion point
                         if (_eventState == "transportComplete") then {
                             [_event, "state", "transportReturn"] call ALIVE_fnc_hashSet;
                         } else {
@@ -3718,8 +5379,19 @@ switch(_operation) do {
                         };
 
                         [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                    } else {
+                        // All vehicles were inactive/virtual - release cargo and complete
+                        if (_debug) then {
+                            ["ML - heliTransportComplete: All transport vehicles inactive, releasing cargo and completing. Event: %1", _eventID] call ALiVE_fnc_dump;
+                        };
+                        [_logic, "setEventProfilesAvailable", _event] call MAINCLASS;
+                        [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
+                        [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
                     };
                 } else {
+                    if (_debug) then {
+                        ["ML - heliTransportComplete: No transport vehicles, moving to eventComplete. Event: %1", _eventID] call ALiVE_fnc_dump;
+                    };
                     // no transport vehicles
                     // set state to event complete
                     [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
@@ -3772,16 +5444,14 @@ switch(_operation) do {
 
             case "transportReturnWait";
             case "heliTransportReturnWait": {
-                // unloading complete
-                // if profiles are active move on
-                // to return to insertion point
-                // if not active destroy transport profiles
                 private ["_anyActive","_anyAlive","_transportProfile","_active","_inCommand","_commandProfileID","_commandProfile","_count"];
 
                 _count = [_logic, "checkEvent", _event] call MAINCLASS;
 
-                if (_count == 0) exitWith {
-                    // set state to event complete
+                if (_count == 0 && count _eventTransportProfiles == 0) exitWith {
+                    if (_debug) then {
+                        ["ML - heliTransportReturnWait: No profiles remain, moving to eventComplete. Event: %1", _eventID] call ALiVE_fnc_dump;
+                    };
                     [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
                     [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
                 };
@@ -3793,12 +5463,8 @@ switch(_operation) do {
                     // mechanism for aborting this state
                     // once set time limit has passed
                     // if all units haven't reached objective
-                    _waitTotalIterations = 40;
-                    _waitIterations = 0;
-
-                    if (count _eventStateData > 0) then {
-                        _waitIterations = _eventStateData select 0;
-                    };
+                    _waitTotalIterations = 60;
+                    _waitIterations = _eventStateData param [0, 0]; if (isNil "_waitIterations" || typeName _waitIterations != "SCALAR") then { _waitIterations = 0; };
 
                     // once transport vehicles are inactive
                     // dispose of the profiles
@@ -3807,9 +5473,26 @@ switch(_operation) do {
                         if !(isNil "_transportProfile") then {
                             _active = _transportProfile select 2 select 1;
                             _vehicle = _transportProfile select 2 select 10;
+                            private _hasLiveVehicle = (!isNull _vehicle && alive _vehicle);
 
+                            // For heli RTB: force inactive on timeout OR if it has flown far enough from delivery destination
                             if (_eventState == "heliTransportReturnWait") then {
-                                if ([position _vehicle, 1000] call ALiVE_fnc_anyPlayersInRange == 0 || _waitIterations > _waitTotalIterations) then {
+                                private _finalDest = [_event, "finalDestination"] call ALIVE_fnc_hashGet;
+                                private _farEnough = if (!isNull _vehicle && alive _vehicle && count _finalDest > 1) then {
+                                    _vehicle distance2D _finalDest > 1500
+                                } else { false };
+                                if (_waitIterations > _waitTotalIterations || _farEnough) then {
+                                    // Force heli to land and despawn if still active
+                                    if (!isNull _vehicle && alive _vehicle && _active) then {
+                                        private _landPad = createVehicle ["Land_HelipadEmpty_F", getPosATL _vehicle, [], 0, "CAN_COLLIDE"];
+                                        _vehicle landAt _landPad;
+                                        [_vehicle, _landPad] spawn {
+                                            private _h = _this select 0; private _p = _this select 1; private _t = 0;
+                                            waitUntil { sleep 2; _t = _t + 2; isTouchingGround _h || !alive _h || _t > 30 };
+                                            deleteVehicle _p;
+                                            if (alive _h) then { _h setDamage 1; }; // despawn by destroying if won't land
+                                        };
+                                    };
                                     _active = false;
                                 };
                             };
@@ -3817,6 +5500,18 @@ switch(_operation) do {
                             if (_active) then {
                                 if (canMove _vehicle) then {
                                     _anyAlive = _anyAlive + 1;
+                                } else {
+                                    // Vehicle can't move (broken rotors etc) - treat as done
+                                    if (_debug) then {
+                                        ["ML - heliTransportReturnWait: Transport vehicle can't move (damaged?), counting as RTB done.", _x] call ALiVE_fnc_dump;
+                                    };
+                                    // Destroy the profile to free resources
+                                    private _inCommand2 = _transportProfile select 2 select 8;
+                                    if (count _inCommand2 > 0) then {
+                                        private _cmdProf = [ALIVE_profileHandler, "getProfile", _inCommand2 select 0] call ALIVE_fnc_profileHandler;
+                                        if !(isNil "_cmdProf") then { [_cmdProf, "destroy"] call ALIVE_fnc_profileEntity; };
+                                    };
+                                    [_transportProfile, "destroy"] call ALIVE_fnc_profileVehicle;
                                 };
 
                                 _anyActive = _anyActive + 1;
@@ -3843,16 +5538,24 @@ switch(_operation) do {
                     [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
 
                     if (_anyActive == 0 || _anyAlive == 0 || _waitIterations > _waitTotalIterations) then {
-                        // no transport vehicles
-                        // set state to event complete
+                        if (_debug) then {
+                            ["ML - heliTransportReturnWait: RTB complete. anyActive=%1 anyAlive=%2 iterations=%3/%4. Moving to eventComplete. Event: %5",
+                                _anyActive, _anyAlive, _waitIterations, _waitTotalIterations, _eventID] call ALiVE_fnc_dump;
+                        };
                         _eventStateData set [0, 0];
                         [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
                         [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
                         [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                    } else {
+                        if (_debug) then {
+                            ["ML - heliTransportReturnWait: Waiting for RTB. anyActive=%1 anyAlive=%2 iteration=%3/%4. Event: %5",
+                                _anyActive, _anyAlive, _waitIterations, _waitTotalIterations, _eventID] call ALiVE_fnc_dump;
+                        };
                     };
                 } else {
-                    // no transport vehicles
-                    // set state to event complete
+                    if (_debug) then {
+                        ["ML - heliTransportReturnWait: No transport profiles, moving to eventComplete. Event: %1", _eventID] call ALiVE_fnc_dump;
+                    };
                     [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
                     [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
                 };
@@ -3889,7 +5592,15 @@ switch(_operation) do {
                         };
                     };
 	                // send a message to all side players from HQ
-	                _message = format["%1 reinforcements have arrived. Available reinforcement level: %2",_factionName,_forcePool];
+	                private _finalDest = [_event, "finalDestination"] call ALIVE_fnc_hashGet;
+	                private _destLocName = "";
+	                if (count _finalDest > 0) then {
+	                    private _nearLocStr = [_finalDest] call ALIVE_fnc_taskGetNearestLocationName;
+	                    if (_nearLocStr != "" && _nearLocStr != "unknown") then {
+	                        _destLocName = format [" near %1", _nearLocStr];
+	                    };
+	                };
+	                _message = format["%1 reinforcements have arrived%2. Available reinforcement level: %3", _factionName, _destLocName, _forcePool];
 	                _radioBroadcast = [objNull,_message,"side",_sideObject,false,false,false,true,_HQ];
 	                [_eventSide,_radioBroadcast] call ALIVE_fnc_radioBroadcastToSide;
                 };
@@ -4097,11 +5808,14 @@ switch(_operation) do {
                                 {
                                     private ["_currentDiff","_vehicleClass","_position","_payloadWeight","_slingLoadProfile"];
 
-                                    if (_paraDrop) then {
-                                        _position = _remotePosition getPos [random(200), random(360)];
+                                    private _prPickupBase = if (_paraDrop) then {
+                                        _remotePosition getPos [random(200), random(360)]
                                     } else {
-                                        _position = _reinforcementPosition getPos [random(200), random(360)];
+                                        _reinforcementPosition getPos [random(200), random(360)]
                                     };
+
+                                    _position = [_logic, "prepareHelicopterLZ", [_prPickupBase, 80]] call MAINCLASS;
+
 
                                     // Get the profile
                                     _slingLoadProfile = [ALiVE_ProfileHandler, "getProfile", (_x select 0)] call ALIVE_fnc_profileHandler;
@@ -4128,8 +5842,13 @@ switch(_operation) do {
                                     // Cannot find vehicle big enough to slingload...
                                     if (_vehicleClass == "") exitWith {_totalCount = _totalCount - 1;};
 
-                                    if(_paraDrop) then {
+                                    if (_paraDrop) then {
                                         _position set [2,PARADROP_HEIGHT];
+                                    };
+
+                                    if (_debug) then {
+                                        ["ML - PR_HELI_INSERT infantry [%1] transport LZ: %2",
+                                            _i + 1, _position] call ALiVE_fnc_dump;
                                     };
 
                                     // Create slingloading heli (slingloading another profile!)
@@ -4149,9 +5868,23 @@ switch(_operation) do {
 
                                     _payloadGroupProfiles pushback _profileIDs;
 
-                                    _profileWaypoint = [_reinforcementPosition, 100, "MOVE", "LIMITED", 300, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
-                                    _profile = _profiles select 0;
-                                    [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
+                                        private _prDestPos = [_logic, "findHelicopterLandingPos", [
+                                            _reinforcementPosition, 0, DESTINATION_VARIANCE
+                                        ]] call MAINCLASS;
+                                        _profileWaypoint = [_prDestPos, 30, "MOVE", "LIMITED", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                                        _profile = _profiles select 0;
+                                        [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
+
+                                        if (_debug) then {
+                                            ["ML - PR_HELI_INSERT [%1] dest waypoint: %2", _i + 1, _prDestPos] call ALiVE_fnc_dump;
+                                        };
+
+                                        // Fuel watchdog for PR infantry transport heli
+                                        [_logic, "spawnHelicopterFuelWatchdog", [
+                                            _profiles select 0 select 2 select 4,
+                                            _reinforcementPosition,
+                                            _eventFaction
+                                        ]] call MAINCLASS;
 
                                     _totalCount = _totalCount + 1;
 
@@ -5230,18 +6963,215 @@ switch(_operation) do {
             _group setBehaviour "CARELESS";
             _group allowFleeing 0;
             _group setCombatMode "BLUE";
+            _group setSpeedMode "FULL";
 
             {
-                _x disableAI "AUTOTARGET";
-                _x disableAI "TARGET";
-                _x setSkill 1;
-                //_x disableAI "THREAT_PATH"; this does not exist and path would make the units not move at all
+                private _unit = _x;
+                _unit disableAI "AUTOTARGET";
+                _unit disableAI "TARGET";
+                _unit setSkill 1;
+
+                // Fly faster when enemies are nearby
+                private _nearEnemies = (position _unit) nearEntities [["Man","Car","Tank","Air"], 1500];
+                private _enemyNear = _nearEnemies select { side _x != side _unit };
+                if (count _enemyNear > 0) then {
+                    _unit forceSpeed 70;
+                } else {
+                    _unit forceSpeed 50;
+                };
             } forEach (units _group);
 
         }else{
             [_entityProfile,"spawn"] call ALIVE_fnc_profileEntity;
         }
 
+    };
+    
+    case "forceHelicopterLanding": {
+
+        // Called when a helicopter transport has been hovering too long
+        // at its destination without landing. Forces a landAt command
+        // to a validated nearby position.
+
+        private _entityProfile = _args select 0;
+        private _targetPos     = _args select 1;
+        private _debug         = [_logic, "debug"] call MAINCLASS;
+
+        private _active = _entityProfile select 2 select 1;
+
+        if (_active) then {
+            private _heli = _entityProfile select 2 select 10;
+
+            if (!isNull _heli && alive _heli) then {
+
+                private _posASL    = getPosASL _heli;
+                private _groundASL = getTerrainHeightASL _posASL;
+                private _heightAGL = (_posASL select 2) - _groundASL;
+                private _spd       = speed _heli;
+
+                // Only intervene if clearly hovering - airborne and slow
+                if (_heightAGL > 5 && _spd < 8) then {
+
+                // Validate target position before searching near it
+                if (typeName _targetPos != "ARRAY" || count _targetPos < 2) then {
+                    ["ML - forceHelicopterLanding: WARNING invalid _targetPos %1 for heli %2, using heli current position",
+                        _targetPos, _heli] call ALiVE_fnc_dump;
+                    _targetPos = getPosATL _heli;
+                };
+
+                // Use the helicopter's current position as the land target,
+                // offset slightly to avoid obstructions directly below.
+                // Use heli's current position projected to ground as land target
+                // BIS_fnc_findSafePos is unreliable on Takistan and can return sky positions
+                private _landPos = getPosATL _heli;
+                _landPos set [2, 0];
+
+                if (_debug) then {
+                    ["ML - forceHelicopterLanding: Heli %1 hovering at %2m AGL speed %3. Forcing land at %4",
+                        _heli, _heightAGL, _spd, _landPos] call ALiVE_fnc_dump;
+                };
+
+                // Clear existing waypoints and issue direct land command
+                private _group = _entityProfile select 2 select 13;
+                if (!isNull _group) then {
+                    while {count (waypoints _group) > 0} do {
+                        deleteWaypoint [_group, 0];
+                    };
+                };
+
+                // landAt requires an object - create a temporary helipad at the target pos
+                if (typeName _landPos == "ARRAY" && count _landPos >= 2) then {
+
+                    if (count _landPos == 2) then { _landPos pushback 0; };
+
+                    private _tempPad = createVehicle ["Land_HelipadEmpty_F", _landPos, [], 0, "CAN_COLLIDE"];
+
+                    [_heli, _tempPad] spawn {
+                        private _heli   = _this select 0;
+                        private _tmpPad = _this select 1;
+                        _heli landAt _tmpPad;
+                        // Wait until heli has landed or 60s timeout, then delete pad
+                        private _t = 0;
+                        waitUntil { sleep 2; _t = _t + 2; (isTouchingGround _heli || !alive _heli || _t > 60) };
+                        deleteVehicle _tmpPad;
+                    };
+
+                    ["ML - forceHelicopterLanding: landAt issued to %1 via temp helipad at %2", _heli, _landPos] call ALiVE_fnc_dump;
+                } else {
+                    ["ML - forceHelicopterLanding: WARNING could not determine safe land position for %1, skipping landAt",
+                        _heli] call ALiVE_fnc_dump;
+                };
+                };
+            };
+        };
+    };
+    
+    case "spawnStalledUnitWatchdog": {
+
+        // Monitors a set of cargo profiles after delivery.
+        // If units have not moved meaningfully within the check period
+        // a new waypoint toward the event destination is issued to
+        // kick them out of any idle state before OPCOM picks them up.
+        // Args: [_cargoProfileIDs, _eventPosition, _eventFaction, _side]
+
+        private _profileIDs  = _args select 0;
+        private _destPos     = _args select 1;
+        private _faction     = _args select 2;
+        private _side        = _args select 3;
+        private _debug       = [_logic, "debug"] call MAINCLASS;
+
+        if (_debug) then {
+            ["ML - spawnStalledUnitWatchdog: Starting for %1 profiles destination %2",
+                count _profileIDs, _destPos] call ALiVE_fnc_dump;
+        };
+
+        [_profileIDs, _destPos, _faction, _side, _debug] spawn {
+
+            private _profileIDs = _this select 0;
+            private _destPos    = _this select 1;
+            private _faction    = _this select 2;
+            private _side       = _this select 3;
+            private _debug      = _this select 4;
+
+            // Allow time for units to dismount and OPCOM to pick them up normally
+            sleep 120;
+
+            private _checkInterval   = 60;
+            private _maxChecks       = 5;
+            private _movementThreshold = 50; // metres - less than this = stalled
+
+            for "_check" from 1 to _maxChecks do {
+
+                sleep _checkInterval;
+
+                {
+                    private _profileID = _x;
+                    private _profile = [ALIVE_profileHandler, "getProfile", _profileID] call ALIVE_fnc_profileHandler;
+
+                    if (!isNil "_profile") then {
+
+                        private _active   = _profile select 2 select 1;
+                        private _busy     = [_profile, "busy", false] call ALIVE_fnc_hashGet;
+                        private _pos      = _profile select 2 select 2;
+                        private _profileType = _profile select 2 select 5;
+
+                        // Only check entity profiles (infantry/crews) not vehicles
+                        if (_profileType == "entity" && !_busy) then {
+
+                            private _waypoints = [_profile, "waypoints"] call ALIVE_fnc_hashGet;
+                            private _hasWaypoints = !isNil "_waypoints" && {count _waypoints > 0};
+
+                            if (_active) then {
+                                // Profile is spawned - check actual unit movement
+                                private _group = _profile select 2 select 13;
+                                if (!isNull _group) then {
+                                    private _leader = leader _group;
+                                    private _distToDest = position _leader distance _destPos;
+                                    private _currentWPs = waypoints _group;
+
+                                    // If close enough to destination consider done
+                                    if (_distToDest < 200) exitWith {};
+
+                                    // If no waypoints and not at destination - stalled
+                                    if (count _currentWPs == 0) then {
+                                        if (_debug) then {
+                                            ["ML - spawnStalledUnitWatchdog: Profile %1 active, no waypoints, dist to dest %2m. Assigning move waypoint.",
+                                                _profileID, _distToDest] call ALiVE_fnc_dump;
+                                        };
+
+                                        private _moveWP = _group addWaypoint [_destPos, 50];
+                                        _moveWP setWaypointType "MOVE";
+                                        _moveWP setWaypointBehaviour "AWARE";
+                                        _moveWP setWaypointCombatMode "YELLOW";
+                                        _moveWP setWaypointSpeed "NORMAL";
+                                        _group setCurrentWaypoint _moveWP;
+                                    };
+                                };
+                            } else {
+                                // Profile not spawned - if no waypoints assign one
+                                if (!_hasWaypoints) then {
+                                    private _distToDest = _pos distance _destPos;
+
+                                    if (_distToDest > 200) then {
+                                        if (_debug) then {
+                                            ["ML - spawnStalledUnitWatchdog: Profile %1 inactive, no waypoints, dist %2m. Assigning profile waypoint.",
+                                                _profileID, _distToDest] call ALiVE_fnc_dump;
+                                        };
+
+                                        private _profileWaypoint = [_destPos, 50, "MOVE", "AWARE", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                                        [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
+                                    };
+                                };
+                            };
+                        };
+                    };
+                } forEach _profileIDs;
+            };
+
+            if (_debug) then {
+                ["ML - spawnStalledUnitWatchdog: Watchdog complete for destination %1", _destPos] call ALiVE_fnc_dump;
+            };
+        };
     };
 
     case "unloadTransport": {
@@ -5316,6 +7246,34 @@ switch(_operation) do {
 
                             if!(isNil "_cargoProfile") then {
                                 [_cargoProfile,_vehicleProfile] call ALIVE_fnc_removeProfileVehicleAssignment;
+
+                                // If the cargo profile is active (spawned), physically
+                                // unload the units and move them to their own group so
+                                // they are not commanded by the heli crew
+                                private _cargoActive = _cargoProfile select 2 select 1;
+                                if (_cargoActive) then {
+                                    private _cargoUnits = _cargoProfile select 2 select 21;
+                                    private _heliVehicle = _vehicleProfile select 2 select 10;
+
+                                    if (count _cargoUnits > 0) then {
+                                        // Create a new group on the same side for the infantry
+                                        private _newGroup = createGroup (side (_cargoUnits select 0));
+
+                                        {
+                                            if (alive _x) then {
+                                                unassignVehicle _x;
+                                                [_x] orderGetIn false;
+                                                _x moveOut _heliVehicle;
+                                                [_x] joinSilent _newGroup;
+                                            };
+                                        } forEach _cargoUnits;
+
+                                        if (_debug) then {
+                                            ["ML - unloadTransportHelicopter: Moved %1 units from heli crew group to new group %2",
+                                                count _cargoUnits, _newGroup] call ALiVE_fnc_dump;
+                                        };
+                                    };
+                                };
                             };
 
                         } forEach _inCargo;
@@ -5480,15 +7438,9 @@ switch(_operation) do {
                         };
                     } foreach _eventAssets;
 
-                    _position = [];
-                    for "_i" from 0 to 1 do {
-                        if (_position isequalto []) then {
-                            _position = [_eventPosition, 0, 300, 15, 0, 0.25, 0, _blacklistPositions] call BIS_fnc_findSafePos;
-                        };
-                    };
-                    if(_position isequalto []) then {
-                        _position = _eventPosition getPos [random(DESTINATION_VARIANCE), random(360)];
-                    };
+                    _position = [_logic, "findHelicopterLandingPos", [
+                        _eventPosition, 200, 600
+                    ]] call MAINCLASS;
 
                     _heliPad = "Land_HelipadEmpty_F" createVehicle _position;
 
@@ -5518,6 +7470,60 @@ switch(_operation) do {
                             if (_vehicleObject iskindof "Helicopter") then {
                                 private _landPos = getpos _helipad;
 
+                                // Issue landAt via temp helipad so heli physically lands
+                                private _tmpPad = createVehicle ["Land_HelipadEmpty_F", _landPos, [], 0, "CAN_COLLIDE"];
+                                _vehicleObject landAt _tmpPad;
+
+                                // Spawn thread: wait for landing then physically unload troops
+                                [_vehicleObject, _tmpPad, _inCargo, _vehicleProfile, _debug] spawn {
+                                    private _heli    = _this select 0;
+                                    private _pad     = _this select 1;
+                                    private _cargo   = _this select 2;
+                                    private _vProf   = _this select 3;
+                                    private _dbg     = _this select 4;
+
+                                    // Wait until landed or 90s timeout
+                                    private _t = 0;
+                                    waitUntil {
+                                        sleep 2; _t = _t + 2;
+                                        isTouchingGround _heli || !alive _heli || _t > 90
+                                    };
+
+                                    deleteVehicle _pad;
+
+                                    if (alive _heli) then {
+                                        // Physically move all cargo units out
+                                        {
+                                            private _profID = _x;
+                                            private _prof = [ALIVE_profileHandler, "getProfile", _profID] call ALIVE_fnc_profileHandler;
+                                            if !(isNil "_prof") then {
+                                                private _units = _prof select 2 select 21;
+                                                if !(isNil "_units") then {
+                                                    private _newGroup = if (count _units > 0) then {
+                                                        createGroup (side (_units select 0))
+                                                    } else { grpNull };
+
+                                                    {
+                                                        if (alive _x) then {
+                                                            unassignVehicle _x;
+                                                            [_x] orderGetIn false;
+                                                            _x moveOut _heli;
+                                                            if !(isNull _newGroup) then {
+                                                                [_x] joinSilent _newGroup;
+                                                            };
+                                                        };
+                                                    } forEach _units;
+
+                                                    if (_dbg) then {
+                                                        ["ML - unloadTransportHelicopter: Physically unloaded %1 units from heli", count _units] call ALiVE_fnc_dump;
+                                                    };
+                                                };
+                                            };
+                                        } forEach _cargo;
+                                    };
+                                };
+
+                                // Profile waypoint to the land position (fallback for virtual helis)
                                 private _landWaypoint = [_landPos, 15, "MOVE"] call ALIVE_fnc_createProfileWaypoint;
                                 [_entityProfile, "clearWaypoints"] call ALIVE_fnc_profileEntity;
                                 [_entityProfile, "addWaypoint", _landWaypoint] call ALIVE_fnc_profileEntity;
@@ -5615,15 +7621,9 @@ switch(_operation) do {
                     // _position = _eventPosition getPos [random(DESTINATION_VARIANCE), random(360)];
                     // _position = _position findEmptyPosition [10,200];
 
-                    private _position = [];
-                    for "_i" from 0 to 1 do {
-                        if (_position isequalto []) then {
-                            _position = [_eventPosition, 0, 300, 15, 0, 0.25, 0] call BIS_fnc_findSafePos;
-                        };
-                    };
-                    if(_position isequalto []) then {
-                        _position = _eventPosition getPos [random(DESTINATION_VARIANCE), random(360)];
-                    };
+                    private _position = [_logic, "findHelicopterLandingPos", [
+                        _eventPosition, 200, 600
+                    ]] call MAINCLASS;
 
                     _heliPad = "Land_HelipadEmpty_F" createVehicle _position;
 
@@ -5826,6 +7826,47 @@ switch(_operation) do {
                 } forEach _x;
 
             } forEach _heliProfiles;
+
+
+            // -----------------------------------------------------------------
+            // FIX: Start stalled unit watchdog for all released cargo profiles
+            // to ensure units move toward their destination if OPCOM does not
+            // pick them up promptly after delivery.
+            // -----------------------------------------------------------------
+            private _allCargoProfileIDs = [];
+            {
+                if (count _x > 0) then {
+                    _allCargoProfileIDs pushback (_x select 0);
+                };
+            } forEach _infantryProfiles;
+            {
+                if (count _x > 0) then {
+                    _allCargoProfileIDs pushback (_x select 0);
+                };
+            } forEach _armourProfiles;
+            {
+                if (count _x > 0) then {
+                    _allCargoProfileIDs pushback (_x select 0);
+                };
+            } forEach _motorisedProfiles;
+
+            if (count _allCargoProfileIDs > 0) then {
+                private _finalDest = [_event, "finalDestination"] call ALIVE_fnc_hashGet;
+                if (count _finalDest > 0) then {
+                    [_logic, "spawnStalledUnitWatchdog", [
+                        _allCargoProfileIDs,
+                        _finalDest,
+                        _eventFaction,
+                        _side
+                    ]] call MAINCLASS;
+
+                    if (_debug) then {
+                        ["ML - setEventProfilesAvailable: Stalled unit watchdog started for %1 profiles at destination %2",
+                            count _allCargoProfileIDs, _finalDest] call ALiVE_fnc_dump;
+                    };
+                };
+            };
+            // -----------------------------------------------------------------
 
 
             // dispatch event
@@ -6066,7 +8107,7 @@ switch(_operation) do {
                         _payloadVehicle = [ALIVE_profileHandler, "getProfile", _payloadVehicleID] call ALIVE_fnc_profileHandler;
 
                         if(!(isNil "_payloadProfile") && !(isNil "_payloadVehicle")) then {
-                            _payloadProfiles pushback _payloadProfileID;
+                            _payloadProfiles pushback [_payloadProfileID, _payloadVehicleID];
 
                             _vehicle = _payloadVehicle select 2 select 10;
 
