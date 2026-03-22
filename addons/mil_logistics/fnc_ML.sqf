@@ -71,6 +71,8 @@ ARJay
 #define FUEL_WATCHDOG_HOVER_SPEED_THRESHOLD 5
 #define FUEL_WATCHDOG_MIN_HOVER_HEIGHT 5
 #define MAX_GROUPS_PER_REQUEST 5
+#define DISMOUNT_RADIUS 500
+#define VEHICLE_LEAD_DIST 50
 
 private ["_result"];
 
@@ -2469,29 +2471,20 @@ switch(_operation) do {
                             // get the highest priority objective
                             _primaryReinforcementObjective = _sortedObjectives select ((count _sortedObjectives)-1);
 
-                            // determine the type of reinforcement according to priority
-                            _primaryReinforcementObjectivePriority = [_primaryReinforcementObjective,"priority"] call ALIVE_fnc_hashGet;
+                            // Preliminary type - deferred to case "requested" where
+                            // route, terrain and asset data are available
+                            _reinforcementType = "HELI";
 
-                            // if the state of the objective is reserved
-                            // objective is available for use
+                            if (_debug) then {
+                                ["ML - onDemandAnalysis (STATIC): Preliminary type HELI (deferred to requested for final decision)."] call ALiVE_fnc_dump;
+                            };
+
+                            // Check if objective is held (available for use)
                             _tacom_state = '';
                             if("tacom_state" in (_primaryReinforcementObjective select 1)) then {
                                 _tacom_state = [_primaryReinforcementObjective,"tacom_state","none"] call ALIVE_fnc_hashGet;
                             };
-
-                            if(_tacom_state == "reserve") then {
-                                _available = true;
-                            };
-
-                            _reinforcementType = "DROP";
-
-                            if(_primaryReinforcementObjectivePriority > 50) then {
-                                _reinforcementType = "AIR";
-                            };
-
-                            if(_primaryReinforcementObjectivePriority > 40 && _primaryReinforcementObjectivePriority < 51) then {
-                                _reinforcementType = "HELI";
-                            };
+                            if(_tacom_state == "reserve") then { _available = true; };
                             
                             
                         // -----------------------------------------------------------------
@@ -2671,17 +2664,15 @@ switch(_operation) do {
                         // get the highest priority objective
                         _primaryReinforcementObjective = _sortedObjectives select ((count _sortedObjectives)-1);
 
-                        // determine the type of reinforcement according to priority
-                        _primaryReinforcementObjectivePriority = [_primaryReinforcementObjective,"priority"] call ALIVE_fnc_hashGet;
+                        // Preliminary type - final decision is made in case "requested"
+                        // where route distance, water, force composition and air asset
+                        // availability are all known. Set HELI as the default preferred
+                        // type when OPCOM holds objectives; requested will override to
+                        // STANDARD if conditions don't support helicopter delivery.
+                        _reinforcementType = "HELI";
 
-                        _reinforcementType = "DROP";
-
-                        if(_primaryReinforcementObjectivePriority > 50) then {
-                            _reinforcementType = "AIR";
-                        };
-
-                        if(_primaryReinforcementObjectivePriority > 40 && _primaryReinforcementObjectivePriority < 51) then {
-                            _reinforcementType = "HELI";
+                        if (_debug) then {
+                            ["ML - onDemandAnalysis: Preliminary type HELI (deferred to requested for final decision based on route/assets)."] call ALiVE_fnc_dump;
                         };
 
 
@@ -2919,27 +2910,11 @@ switch(_operation) do {
 
                 private ["_waitTime"];
 
-                // according to the type of reinforcement
-                // adjust wait time for creation of profiles
-
-                switch(_reinforcementType) do {
-                    case "AIR": {
-                        _waitTime = WAIT_TIME_AIR;
-                        _eventType = "AIRDROP";
-                    };
-                    case "HELI": {
-                        _waitTime = WAIT_TIME_HELI;
-                        _eventType = "HELI_INSERT";
-                    };
-                    case "MARINE": {
-                        _waitTime = WAIT_TIME_MARINE;
-                        _eventType = "HELI_INSERT";
-                    };
-                    case "DROP": {
-                        _waitTime = WAIT_TIME_DROP;
-                        _eventType = "STANDARD";
-                    };
-                };
+                // Wait time before spawning profiles.
+                // Use helicopter wait time as default since that is the preferred
+                // delivery method; the decision logic below will select STANDARD
+                // if conditions don't support helicopter insertion.
+                private _waitTime = WAIT_TIME_HELI;
 
 
                 // DEBUG -------------------------------------------------------------------------------------
@@ -2987,37 +2962,74 @@ switch(_operation) do {
                             } foreach  _airTrans;
                         };
 
-                        // TBD: WHAT THE FUCK IS THIS PILE OF SHIT BELOW?! THIS NEEDS TO BE REDONE PROPERLY!
+                        // ---------------------------------------------------------------
+                        // DELIVERY TYPE DECISION
+                        // Makes the authoritative delivery type decision using all
+                        // available data: force composition, route terrain, distance,
+                        // and air asset availability.
+                        //
+                        // Decision order (highest to lowest precedence):
+                        // 1. Heavy vehicles requested -> STANDARD (can't be helicoptered)
+                        // 2. No air transport assets  -> STANDARD
+                        // 3. Distance is 0 (single held objective, destination unknown yet)
+                        //    -> HELI_INSERT so findBestDeliveryObjective can score a real target
+                        // 4. Water on route           -> HELI_INSERT (if assets available)
+                        // 5. Short distance (<1500m)  -> STANDARD (ground is faster/cheaper)
+                        // 6. Distance >=1500m         -> HELI_INSERT
+                        // ---------------------------------------------------------------
 
-                        // If OPCOM request airdrop of tanks, change to convoy
-                        if (_eventType == "AIRDROP" && !_noHeavy) then {_eventType = "STANDARD";};
-
-                        // If its air drop and nothing heavy and sling available then switch to Heli Insert
-                        if (_eventType == "AIRDROP" && _noHeavy && _slingAvailable) then {_eventType = "HELI_INSERT";};
-
-                        // If OPCOM requested convoy but there's water - then heli insert
-                        if (_eventType == "STANDARD" && _water && _noHeavy && count _airTrans > 0) then {_eventType = "HELI_INSERT";};
-
-                        // If sling is not available then its an AIRDROP
-                        If (_eventType == "HELI_INSERT" && _eventForceMotorised > 0 && !_slingAvailable && _noHeavy) then {_eventType = "AIRDROP";};
-
-                        // If still Heli Insert is chosen after all and armoured vehicles are requested override to convoy
-                        If (_eventType == "HELI_INSERT" && {!_noHeavy}) then {_eventType = "STANDARD"};
-
-                        if (_water && !_noHeavy) then {_eventType = "STANDARD"}; // COULD DELIVER TO NEAREST BEACH?
-
-                        if (count _airTrans == 0) then {_eventType = "STANDARD"};
-
-                        // Choose start position
-                        if(_eventType == "STANDARD" || _eventType == "HELI_INSERT") then {
-
-                            _reinforcementPosition = [_reinforcementPrimaryObjective,"center"] call ALIVE_fnc_hashGet;
-
-                        }else{
-                            _reinforcementPosition = _eventPosition;
+                        // Rule 1: Heavy vehicles cannot be helicoptered
+                        if (!_noHeavy) then {
+                            _eventType = "STANDARD";
+                            if (_debug) then {
+                                ["ML - Delivery type: STANDARD (heavy vehicles requested, distance %1m)", _routeDistance] call ALiVE_fnc_dump;
+                            };
+                        } else {
+                            // Rule 2: No air assets available - must go by ground
+                            if (count _airTrans == 0) then {
+                                _eventType = "STANDARD";
+                                if (_debug) then {
+                                    ["ML - Delivery type: STANDARD (no air transport assets available)"] call ALiVE_fnc_dump;
+                                };
+                            } else {
+                                // Rule 3: Zero distance means departure base = destination (single objective)
+                                // Let HELI_INSERT path score a proper frontline target
+                                if (_routeDistance < 1) then {
+                                    _eventType = "HELI_INSERT";
+                                    if (_debug) then {
+                                        ["ML - Delivery type: HELI_INSERT (single objective scenario, deferring destination to scoring)"] call ALiVE_fnc_dump;
+                                    };
+                                } else {
+                                    // Rule 4: Water on route forces helicopter regardless of distance
+                                    if (_water) then {
+                                        _eventType = "HELI_INSERT";
+                                        if (_debug) then {
+                                            ["ML - Delivery type: HELI_INSERT (water obstacle on route, distance %1m)", _routeDistance] call ALiVE_fnc_dump;
+                                        };
+                                    } else {
+                                        // Rules 5-6: Distance-based selection
+                                        if (_routeDistance < 1500) then {
+                                            _eventType = "STANDARD";
+                                            if (_debug) then {
+                                                ["ML - Delivery type: STANDARD (short distance %1m, ground preferred)", _routeDistance] call ALiVE_fnc_dump;
+                                            };
+                                        } else {
+                                            _eventType = "HELI_INSERT";
+                                            if (_debug) then {
+                                                ["ML - Delivery type: HELI_INSERT (distance %1m, helicopter preferred)", _routeDistance] call ALiVE_fnc_dump;
+                                            };
+                                        };
+                                    };
+                                };
+                            };
                         };
 
-                        ["AI LOGCOM Side: %9 Type: %6 From: %8 To: %7, Dist: %1, Dir: %2, Water: %3, Sling: %4, Heavy: %5", _routeDistance, _routeDirection, _water, _slingAvailable, !_noheavy, _eventType, _eventPosition, _reinforcementPosition, _side] call ALiVE_fnc_dump;
+                        // Both STANDARD and HELI_INSERT depart from a held objective
+                        _reinforcementPosition = [_reinforcementPrimaryObjective,"center"] call ALIVE_fnc_hashGet;
+
+                        ["AI LOGCOM Side: %1 Type: %2 From: %3 To: %4 Dist: %5m Water: %6 Heavy: %7",
+                            _side, _eventType, _reinforcementPosition, _eventPosition,
+                            round _routeDistance, _water, !_noHeavy] call ALiVE_fnc_dump;
 
                         // if heli insert allow only air and
                         // infantry groups & Motorized
@@ -4996,9 +5008,152 @@ switch(_operation) do {
                 _waitTotalIterations = 400;
                 _waitIterations = _eventStateData param [0, 0]; if (isNil "_waitIterations" || typeName _waitIterations != "SCALAR") then { _waitIterations = 0; };
 
+                // ---------------------------------------------------------------
+                // EARLY DISMOUNT - ground transport vehicles only
+                // When an active ground transport vehicle (not helicopter) is
+                // within DISMOUNT_RADIUS of the destination, unload infantry
+                // early so they approach on foot. The vehicle then advances
+                // VEHICLE_LEAD_DIST ahead toward the objective as overwatch.
+                // Only triggers once per event (stateData slot 1 used as flag).
+                // Transport vehicle profiles are in _eventTransportVehiclesProfiles.
+                // ---------------------------------------------------------------
+                private _DISMOUNT_RADIUS = DISMOUNT_RADIUS;
+                private _VEHICLE_LEAD_DIST = VEHICLE_LEAD_DIST;
+                private _dismountDone = _eventStateData param [1, false];
+                if (isNil "_dismountDone" || typeName _dismountDone != "BOOL") then { _dismountDone = false; };
+
+                if (!_dismountDone) then {
+
+                    if (_debug) then {
+                        ["ML - transportTravel: Checking early dismount. Transport vehicles: %1 Dismount radius: %2m Event: %3",
+                            count _eventTransportVehiclesProfiles, _DISMOUNT_RADIUS, _eventID] call ALiVE_fnc_dump;
+                    };
+
+                    private _dismountTriggered = false;
+
+                    {
+                        private _vehProfID  = _x;
+                        private _vehProfile = [ALIVE_profileHandler, "getProfile", _vehProfID] call ALIVE_fnc_profileHandler;
+                        if (isNil "_vehProfile") then { continue };
+
+                        // Skip helicopters - they have their own delivery watchdog
+                        private _vehClass = _vehProfile select 2 select 11;
+                        private _isHeli = (count (configProperties [
+                            configFile >> "CfgVehicles" >> _vehClass,
+                            "configName _x == 'simulation'", true
+                        ]) > 0) && {
+                            [configFile >> "CfgVehicles" >> _vehClass >> "simulation", ""] call ALiVE_fnc_getConfigValue == "helicopter"
+                        };
+                        if (_isHeli) then { continue };
+
+                        private _isActive = _vehProfile select 2 select 1;
+                        if (_debug) then {
+                            ["ML - transportTravel: Transport vehicle %1 class=%2 active=%3",
+                                _vehProfID, _vehClass, _isActive] call ALiVE_fnc_dump;
+                        };
+                        if (!_isActive) then { continue };
+
+                        private _vehPos     = _vehProfile select 2 select 2;
+                        private _distToDest = _vehPos distance2D _eventPosition;
+
+                        if (_debug) then {
+                            ["ML - transportTravel: Transport vehicle %1 dist to dest=%2m (threshold=%3m)",
+                                _vehProfID, round _distToDest, _DISMOUNT_RADIUS] call ALiVE_fnc_dump;
+                        };
+
+                        if (_distToDest > _DISMOUNT_RADIUS) then { continue };
+
+                        // Within dismount radius - check for cargo
+                        private _inCargo = _vehProfile select 2 select 9;
+                        if (_debug) then {
+                            ["ML - transportTravel: Transport vehicle %1 within dismount radius. Cargo profiles: %2",
+                                _vehProfID, count _inCargo] call ALiVE_fnc_dump;
+                        };
+                        if (count _inCargo == 0) then { continue };
+
+                        ["ML - transportTravel: Early dismount triggered for %1 (%2) at %3m from destination. Event: %4",
+                            _vehProfID, _vehClass, round _distToDest, _eventID] call ALiVE_fnc_dump;
+
+                        // Unload each cargo profile and give them a foot waypoint to the destination
+                        {
+                            private _cargoProfile = [ALIVE_profileHandler, "getProfile", _x] call ALIVE_fnc_profileHandler;
+                            if (isNil "_cargoProfile") then { continue };
+
+                            [_cargoProfile, _vehProfile] call ALIVE_fnc_removeProfileVehicleAssignment;
+
+                            // If physically spawned, moveOut the units
+                            private _cargoActive = _cargoProfile select 2 select 1;
+                            if (_cargoActive) then {
+                                private _cargoUnits = _cargoProfile select 2 select 21;
+                                private _vehObj     = _vehProfile select 2 select 10;
+                                if (!isNull _vehObj) then {
+                                    { if (alive _x) then { unassignVehicle _x; _x moveOut _vehObj; }; } forEach _cargoUnits;
+                                    if (_debug) then {
+                                        ["ML - transportTravel: Physically dismounted %1 units from %2",
+                                            count _cargoUnits, _vehProfID] call ALiVE_fnc_dump;
+                                    };
+                                };
+                            };
+
+                            // Give infantry a waypoint to continue to destination on foot
+                            [_cargoProfile, "clearWaypoints"] call ALIVE_fnc_profileEntity;
+                            private _infWP = [_eventPosition, 50, "MOVE", "LIMITED", 2, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                            [_cargoProfile, "addWaypoint", _infWP] call ALIVE_fnc_profileEntity;
+
+                            if (_debug) then {
+                                ["ML - transportTravel: Infantry profile %1 given foot waypoint to %2",
+                                    _x, _eventPosition] call ALiVE_fnc_dump;
+                            };
+
+                        } forEach _inCargo;
+
+                        // Give vehicle a waypoint VEHICLE_LEAD_DIST ahead toward objective,
+                        // then continue to destination to act as overwatch
+                        private _dirToDest  = _vehPos getDir _eventPosition;
+                        private _leadPos    = _vehPos getPos [_VEHICLE_LEAD_DIST, _dirToDest];
+                        _leadPos set [2, 0];
+                        private _nearRoad   = _leadPos nearRoads 40;
+                        private _roadSnapped = false;
+                        if (count _nearRoad > 0) then {
+                            _leadPos = getPos (_nearRoad select 0);
+                            _roadSnapped = true;
+                        };
+
+                        if (_debug) then {
+                            ["ML - transportTravel: Vehicle %1 overwatch position %2 (road snapped: %3)",
+                                _vehProfID, _leadPos, _roadSnapped] call ALiVE_fnc_dump;
+                        };
+
+                        [_vehProfile, "clearWaypoints"] call ALIVE_fnc_profileEntity;
+                        private _leadWP = [_leadPos,      10, "MOVE", "LIMITED", 2, [], "COLUMN"] call ALIVE_fnc_createProfileWaypoint;
+                        private _destWP = [_eventPosition, 50, "MOVE", "LIMITED", 2, [], "COLUMN"] call ALIVE_fnc_createProfileWaypoint;
+                        [_vehProfile, "addWaypoint", _leadWP] call ALIVE_fnc_profileEntity;
+                        [_vehProfile, "addWaypoint", _destWP] call ALIVE_fnc_profileEntity;
+
+                        _dismountTriggered = true;
+
+                    } forEach _eventTransportVehiclesProfiles;
+
+                    if (_dismountTriggered) then {
+                        _eventStateData set [1, true];
+                        [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                        ["ML - transportTravel: Early dismount complete. Infantry on foot, vehicles advancing as overwatch. Event: %1",
+                            _eventID] call ALiVE_fnc_dump;
+                    } else {
+                        if (_debug) then {
+                            ["ML - transportTravel: No active ground transports within dismount radius yet. Event: %1", _eventID] call ALiVE_fnc_dump;
+                        };
+                    };
+                } else {
+                    if (_debug) then {
+                        ["ML - transportTravel: Early dismount already completed for event %1, skipping check.", _eventID] call ALiVE_fnc_dump;
+                    };
+                };
+                // ---------------------------------------------------------------
+                // END EARLY DISMOUNT
+                // ---------------------------------------------------------------
+
                 // check waypoints
-                // if all waypoints are complete
-                // trigger end of logistics control
 
                 _transportProfiles = _eventTransportProfiles;
                 _infantryProfiles = [_eventCargoProfiles, 'infantry'] call ALIVE_fnc_hashGet;
@@ -5478,9 +5633,16 @@ switch(_operation) do {
                             // For heli RTB: force inactive on timeout OR if it has flown far enough from delivery destination
                             if (_eventState == "heliTransportReturnWait") then {
                                 private _finalDest = [_event, "finalDestination"] call ALIVE_fnc_hashGet;
-                                private _farEnough = if (!isNull _vehicle && alive _vehicle && count _finalDest > 1) then {
-                                    _vehicle distance2D _finalDest > 1500
-                                } else { false };
+                                private _farEnough = false;
+                                if (count _finalDest > 1) then {
+                                    // Use live vehicle position if spawned, otherwise profile's recorded position
+                                    private _checkPos = if (!isNull _vehicle && alive _vehicle) then {
+                                        getPos _vehicle
+                                    } else {
+                                        _transportProfile select 2 select 2
+                                    };
+                                    _farEnough = _checkPos distance2D _finalDest > 1500;
+                                };
                                 if (_waitIterations > _waitTotalIterations || _farEnough) then {
                                     // Force heli to land and despawn if still active
                                     if (!isNull _vehicle && alive _vehicle && _active) then {
