@@ -5024,7 +5024,7 @@ switch(_operation) do {
 
                 if (!_dismountDone) then {
 
-                    if (_debug) then {
+                    if (_debug && count _eventTransportVehiclesProfiles > 0) then {
                         ["ML - transportTravel: Checking early dismount. Transport vehicles: %1 Dismount radius: %2m Event: %3",
                             count _eventTransportVehiclesProfiles, _DISMOUNT_RADIUS, _eventID] call ALiVE_fnc_dump;
                     };
