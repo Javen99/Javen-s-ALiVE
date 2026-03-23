@@ -735,10 +735,12 @@ switch(_operation) do {
         // recon and none are excluded - unknown/unassessed territory.
         private _activeStates = ["attack", "capture", "defend"];
 
-        private _bestObjective = nil;
-        private _bestScore     = -1;
-        private _bestPos       = [];
-        private _bestIsActive  = false;
+        private _bestObjective   = nil;
+        private _bestScore       = -1;
+        private _bestPos         = [];
+        private _bestIsActive    = false;
+        private _bestObjState    = "none";
+        private _bestEnemyCount  = 0;
 
         {
             private _obj         = _x;
@@ -845,10 +847,12 @@ switch(_operation) do {
                     };
 
                     if (_totalScore > _bestScore || (_isActive && !_bestIsActive)) then {
-                        _bestScore     = _totalScore;
-                        _bestObjective = _obj;
-                        _bestPos       = _objPos;
-                        _bestIsActive  = _isActive;
+                        _bestScore      = _totalScore;
+                        _bestObjective  = _obj;
+                        _bestPos        = _objPos;
+                        _bestIsActive   = _isActive;
+                        _bestObjState   = _objState;
+                        _bestEnemyCount = _enemyCount;
                     };
 
                     }; // end enemy presence check
@@ -864,8 +868,8 @@ switch(_operation) do {
         if (!isNil "_bestObjective" && count _bestPos > 0) then {
             if (_debug) then {
                 private _bestLocName = [_bestPos] call ALIVE_fnc_taskGetNearestLocationName;
-                ["ML - findBestDeliveryObjective: Best objective selected near %1 at %2 with score %3",
-                    _bestLocName, _bestPos, _bestScore] call ALiVE_fnc_dump;
+                ["ML - findBestDeliveryObjective: Best objective selected near %1 at %2 with score %3 state=%4 enemyCount=%5",
+                    _bestLocName, _bestPos, _bestScore, _bestObjState, _bestEnemyCount] call ALiVE_fnc_dump;
             };
         } else {
             if (_debug) then {
@@ -874,7 +878,7 @@ switch(_operation) do {
             _bestPos = [];
         };
 
-        _result = _bestPos;
+        _result = [_bestPos, _bestEnemyCount, _bestObjState];
     };
 
     // ============================================================
@@ -1149,6 +1153,186 @@ switch(_operation) do {
     }; // end case spawnHeliDeliveryWatchdog
 
 
+
+    // ============================================================
+    // OPERATION: spawnHeliParadropWatchdog
+    // ============================================================
+    case "spawnHeliParadropWatchdog": {
+
+        private _tProfID     = _args select 0;
+        private _vProfID     = _args select 1;
+        private _destPos     = _args select 2;
+        private _returnPos   = _args select 3;
+        private _infantryIDs = _args select 4;
+        private _dropHeight  = _args select 5;
+        private _dbg         = _args select 6;
+
+        [_tProfID, _vProfID, _destPos, _returnPos, _infantryIDs, _dropHeight, _dbg] spawn {
+
+            private _tProfID     = _this select 0;
+            private _vProfID     = _this select 1;
+            private _destPos     = _this select 2;
+            private _returnPos   = _this select 3;
+            private _infantryIDs = _this select 4;
+            private _dropHeight  = _this select 5;
+            private _dbg         = _this select 6;
+
+            private _dropRadius     = 350;
+            private _transitTimeout = 900;
+            private _phaseTimer     = 0;
+            private _phase          = 0;
+            private _dropped        = false;
+
+            if (_dbg) then {
+                ["ML - heliParadropWatchdog: %1 STARTED. dest=%2 groups=%3 dropHeight=%4", _tProfID, _destPos, count _infantryIDs, _dropHeight] call ALiVE_fnc_dump;
+            };
+
+            while { _phase == 0 } do {
+                sleep 5;
+                _phaseTimer = _phaseTimer + 5;
+                private _tp = [ALIVE_profileHandler, "getProfile", _tProfID] call ALIVE_fnc_profileHandler;
+                if (isNil "_tp") then {
+                    ["ML - heliParadropWatchdog: %1 profile gone at %2s. Aborting.", _tProfID, _phaseTimer] call ALiVE_fnc_dump;
+                    _phase = 2;
+                } else {
+                    if (_phaseTimer > _transitTimeout) then {
+                        ["ML - heliParadropWatchdog: %1 TRANSIT timeout at %2s. Forcing drop.", _tProfID, _phaseTimer] call ALiVE_fnc_dump;
+                        _phase = 1;
+                    } else {
+                        private _heli = _tp select 2 select 10;
+                        if (!isNull _heli && alive _heli) then {
+                            private _dist = _heli distance2D _destPos;
+                            if (_dbg) then {
+                                ["ML - heliParadropWatchdog: %1 TRANSIT active. dist=%2m heightAGL=%3m t=%4s", _tProfID, round _dist, round ((_heli modelToWorldVisual [0,0,0]) select 2), _phaseTimer] call ALiVE_fnc_dump;
+                            };
+                            if (_dist < _dropRadius) then {
+                                ["ML - heliParadropWatchdog: %1 over DZ (active) dist=%2m. Beginning drop.", _tProfID, round _dist] call ALiVE_fnc_dump;
+                                _phase = 1;
+                            };
+                        } else {
+                            private _profPos = _tp select 2 select 2;
+                            private _dist2D = if (count _profPos > 1) then { _profPos distance2D _destPos } else { -1 };
+                            if (_dbg) then {
+                                ["ML - heliParadropWatchdog: %1 TRANSIT virtual. profPos=%2 dist=%3m t=%4s", _tProfID, _profPos, round _dist2D, _phaseTimer] call ALiVE_fnc_dump;
+                            };
+                            if (_dist2D >= 0 && _dist2D < _dropRadius) then {
+                                ["ML - heliParadropWatchdog: %1 over DZ (virtual) dist=%2m. Beginning drop.", _tProfID, round _dist2D] call ALiVE_fnc_dump;
+                                _phase = 1;
+                            } else {
+                                if (_phaseTimer > 180) then {
+                                    ["ML - heliParadropWatchdog: %1 virtual timeout at %2s dist=%3m. Forcing drop.", _tProfID, _phaseTimer, round _dist2D] call ALiVE_fnc_dump;
+                                    _phase = 1;
+                                };
+                            };
+                        };
+                    };
+                };
+            };
+
+            if (_phase == 1) then {
+                private _tp2   = [ALIVE_profileHandler, "getProfile", _tProfID] call ALIVE_fnc_profileHandler;
+                private _heli2 = if (!isNil "_tp2") then { _tp2 select 2 select 10 } else { objNull };
+                private _heliActive = (!isNull _heli2 && alive _heli2);
+
+                if (_dbg) then {
+                    ["ML - heliParadropWatchdog: %1 DROP phase. heliActive=%2 groups=%3", _tProfID, _heliActive, count _infantryIDs] call ALiVE_fnc_dump;
+                };
+
+                {
+                    private _infProfID  = _x;
+                    private _infProfile = [ALIVE_profileHandler, "getProfile", _infProfID] call ALIVE_fnc_profileHandler;
+                    if (!isNil "_infProfile") then {
+
+                        if (_heliActive) then {
+                            // -------------------------------------------------------
+                            // ACTIVE drop: heli is within activation range.
+                            // Teleport infantry profile to heli position first so
+                            // ALiVE will spawn them (out-of-range spawn silently fails),
+                            // then physically place them in parachutes.
+                            // -------------------------------------------------------
+                            // Teleport infantry profile to ground below the heli so
+                            // ALiVE's spawn system activates them (spawn fails if outside range).
+                            // Use ground position directly beneath heli, not the heli's altitude.
+                            private _heliPos = getPos _heli2;  // AGL ground-level x,y
+                            [_infProfile, "position", _heliPos] call ALIVE_fnc_profileEntity;
+
+                            private _infUnits = _infProfile select 2 select 21;
+                            if (_dbg) then {
+                                ["ML - heliParadropWatchdog: %1 inf profile %2 units before spawn: %3 active=%4", _tProfID, _infProfID, count _infUnits, _infProfile select 2 select 1] call ALiVE_fnc_dump;
+                            };
+                            if (count _infUnits == 0) then {
+                                [_infProfile, "spawn"] call ALIVE_fnc_profileEntity;
+                                // Wait for ALiVE to materialise units -- max 5 seconds
+                                private _spawnTimer = 0;
+                                waitUntil {
+                                    sleep 0.1;
+                                    _spawnTimer = _spawnTimer + 0.1;
+                                    _infUnits = _infProfile select 2 select 21;
+                                    (count _infUnits > 0) || (_spawnTimer > 5)
+                                };
+                                if (_dbg) then {
+                                    ["ML - heliParadropWatchdog: %1 inf profile %2 units after spawn: %3 (waited %4s)", _tProfID, _infProfID, count _infUnits, _spawnTimer] call ALiVE_fnc_dump;
+                                };
+                            };
+                            {
+                                private _unit = _x;
+                                if (alive _unit) then {
+                                    private _dropPosASL = getPosASL _heli2;
+                                    _dropPosASL set [2, (_dropPosASL select 2) - 8];
+                                    private _para = createVehicle ["NonSteerableParachute_F", ASLToAGL _dropPosASL, [], 0, "FLY"];
+                                    _para allowDamage false;
+                                    _para setPosASL _dropPosASL;
+                                    _para setVelocity (velocity _heli2);
+                                    _unit moveInDriver _para;
+                                    [_para] spawn { sleep 2; (_this select 0) allowDamage true; };
+                                    if (_dbg) then {
+                                        ["ML - heliParadropWatchdog: Unit %1 dropped in parachute at %2", _unit, ASLToAGL _dropPosASL] call ALiVE_fnc_dump;
+                                    };
+                                    sleep 0.4;
+                                };
+                            } forEach _infUnits;
+
+                        } else {
+                            // -------------------------------------------------------
+                            // VIRTUAL drop: move infantry profile to destination.
+                            // -------------------------------------------------------
+                            [_infProfile, "position", _destPos] call ALIVE_fnc_profileEntity;
+                            private _wpDest = [_destPos, 100, "MOVE", "NORMAL", 60, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                            [_infProfile, "clearWaypoints"] call ALIVE_fnc_profileEntity;
+                            [_infProfile, "addWaypoint", _wpDest] call ALIVE_fnc_profileEntity;
+                            if (_dbg) then {
+                                ["ML - heliParadropWatchdog: %1 virtual drop -- inf profile %2 teleported to %3", _tProfID, _infProfID, _destPos] call ALiVE_fnc_dump;
+                            };
+                        };
+
+                    } else {
+                        if (_dbg) then {
+                            ["ML - heliParadropWatchdog: %1 inf profile %2 is nil, skipping.", _tProfID, _infProfID] call ALiVE_fnc_dump;
+                        };
+                    };
+                } forEach _infantryIDs;
+                _dropped = true;
+                if (_dbg) then {
+                    ["ML - heliParadropWatchdog: %1 drop phase complete. dropped=%2", _tProfID, _dropped] call ALiVE_fnc_dump;
+                };
+            };
+
+            // Signal completion only after a successful drop
+            if (_dropped) then {
+                if (isNil "ALIVE_ML_paradropComplete") then { ALIVE_ML_paradropComplete = []; };
+                ALIVE_ML_paradropComplete pushBackUnique _tProfID;
+                if (_dbg) then {
+                    ["ML - heliParadropWatchdog: %1 paradropComplete signalled. Watchdog exiting.", _tProfID] call ALiVE_fnc_dump;
+                };
+            } else {
+                if (_dbg) then {
+                    ["ML - heliParadropWatchdog: %1 exiting WITHOUT drop (phase=%2). paradropComplete NOT signalled.", _tProfID, _phase] call ALiVE_fnc_dump;
+                };
+            };
+
+        };
+
+    }; // end case spawnHeliParadropWatchdog
 
     // Main process
     case "init": {
@@ -2090,7 +2274,7 @@ switch(_operation) do {
 
                     _forceMakeupTotal = 0;
 
-                    if(_eventType == "STANDARD" || _eventType == "AIRDROP" || _eventType == "HELI_INSERT") then {
+                    if(_eventType == "STANDARD" || _eventType == "AIRDROP" || _eventType == "HELI_INSERT" || _eventType == "HELI_PARADROP") then {
 
                         //Sanitize _eventForceMakeup, 0 is the minimum for every reinforcement type, only for default logistics
                         //Restricted to opcom calls as the player logistic requests are made different
@@ -3216,15 +3400,20 @@ switch(_operation) do {
 
                                 // Rule 4: Find the best scored delivery destination,
                                 // excluding both the insertion point and the likely departure base
-                                private _scoredDestPos = [];
+                                private _scoredDestPos    = [];
+                                private _scoredEnemyCount = 0;
+                                private _scoredObjState   = "none";
                                 if (count _allObjectives > 0) then {
-                                    _scoredDestPos = [_logic, "findBestDeliveryObjective", [
+                                    private _scoredResult = [_logic, "findBestDeliveryObjective", [
                                         _allObjectives,
                                         _eventPosition,
                                         _eventFaction,
                                         _side,
                                         _candidateDeparturePos
                                     ]] call MAINCLASS;
+                                    _scoredDestPos    = _scoredResult select 0;
+                                    _scoredEnemyCount = _scoredResult select 1;
+                                    _scoredObjState   = _scoredResult select 2;
                                 };
 
                                 if (count _scoredDestPos > 0) then {
@@ -3352,6 +3541,19 @@ switch(_operation) do {
                                             _remotePosition, _reinforcementPosition, _eventPosition,
                                             _remotePosition distance _eventPosition] call ALiVE_fnc_dump;
                                     };
+
+                                    // PARADROP vs INSERT decision
+                                    if (_scoredEnemyCount > 0 || _scoredObjState in ["attack","capture"]) then {
+                                        _eventType = "HELI_PARADROP";
+                                        ["ML - HELI_PARADROP selected: enemy=%1 objState=%2 at destination.",
+                                            _scoredEnemyCount, _scoredObjState] call ALiVE_fnc_dump;
+                                    } else {
+                                        if (_debug) then {
+                                            ["ML - HELI_INSERT confirmed: enemy=%1 objState=%2 at destination. LZ clear.",
+                                                _scoredEnemyCount, _scoredObjState] call ALiVE_fnc_dump;
+                                        };
+                                    };
+
                                 }; // end departure base else
 
                                 }; // end if (_eventType == "HELI_INSERT") destination check
@@ -3394,7 +3596,7 @@ switch(_operation) do {
                         // Throttle: limit concurrent HELI_INSERT missions to avoid
                         // flooding the AO with helicopters from the same destination
                         private _heliThrottleExceeded = false;
-                        if (_eventType == "HELI_INSERT") then {
+                        if (_eventType in ["HELI_INSERT","HELI_PARADROP"]) then {
                             private _activeHeliEvents = 0;
                             {
                                 private _qEvent = _x;
@@ -3402,13 +3604,14 @@ switch(_operation) do {
                                 private _qID    = [_qEvent, "id"]    call ALIVE_fnc_hashGet;
                                 private _qData  = [_qEvent, "data"]  call ALIVE_fnc_hashGet;
                                 private _qType  = if (count _qData > 4) then { _qData select 4 } else { "" };
-                                if (_qID != _eventID && _qType == "HELI_INSERT") then {
-                                    // Count both HELI_INSERT-specific states AND standard transport
+                                if (_qID != _eventID && _qType in ["HELI_INSERT","HELI_PARADROP"]) then {
+                                    // Count both HELI_INSERT/HELI_PARADROP-specific states AND standard transport
                                     // states, since HELI_INSERT can fall back to the STANDARD path
                                     if (_qState in [
                                         "transportLoad","transportLoadWait","transportStart","transportTravel",
                                         "heliTransportStart","heliTransport","heliTransportUnloadWait",
-                                        "heliTransportComplete","heliTransportReturn","heliTransportReturnWait"
+                                        "heliTransportComplete","heliTransportReturn","heliTransportReturnWait",
+                                        "heliParadropStart","heliParadropFly","heliParadropReturn","heliParadropReturnWait"
                                     ]) then {
                                         _activeHeliEvents = _activeHeliEvents + 1;
                                     };
@@ -3725,14 +3928,14 @@ switch(_operation) do {
                             _group = _infantryGroups select _i;
 
                             if(_paraDrop) then {
-                                if(_eventType == "HELI_INSERT") then {
+                                if(_eventType == "HELI_INSERT" || _eventType == "HELI_PARADROP") then {
                                     _position = _remotePosition;
                                 }else{
                                     _position = _reinforcementPosition getPos [random(200), random(360)];
                                     _position set [2,PARADROP_HEIGHT];
                                 };
                             } else {
-                                if (_eventType == "HELI_INSERT") then {
+                                if (_eventType == "HELI_INSERT" || _eventType == "HELI_PARADROP") then {
                                     // Spawn at departure base - position will be overridden
                                     // to the specific pickup LZ during heli assignment below
                                     _position = _remotePosition;
@@ -3856,6 +4059,65 @@ switch(_operation) do {
                                         ]] call MAINCLASS;
 
                                     };
+
+                                };
+
+                            };
+
+                            _eventTransportProfiles = _eventTransportProfiles + _transportProfiles;
+                            _eventTransportVehiclesProfiles = _eventTransportVehiclesProfiles + _transportVehicleProfiles;
+                        };
+
+                        if(_eventType == "HELI_PARADROP") then {
+
+                            private ["_infantryProfileID","_infantryProfile","_profileWaypoint","_profile"];
+
+                            _transportGroups = [ALIVE_factionDefaultAirTransport,_eventFaction,[]] call ALIVE_fnc_hashGet;
+                            _transportProfiles = [];
+                            _transportVehicleProfiles = [];
+
+                            if(count _transportGroups == 0) then {
+                                _transportGroups = [ALIVE_sideDefaultAirTransport,_side] call ALIVE_fnc_hashGet;
+                            };
+
+                            if(count _transportGroups > 0) then {
+
+                                for "_i" from 0 to _groupCount -1 do {
+
+                                    private _pickupLZPos = [_logic, "prepareHelicopterLZ", [
+                                        _remotePosition getPos [random(200), random(360)], 80
+                                    ]] call MAINCLASS;
+
+                                    if (_debug) then {
+                                        ["ML - HELI_PARADROP: Heli [%1/%2] spawn LZ: %3",
+                                            _i + 1, _groupCount, _pickupLZPos] call ALiVE_fnc_dump;
+                                    };
+
+                                    _vehicleClass = selectRandom _transportGroups;
+
+                                    _profiles = [_vehicleClass,_side,_eventFaction,"CAPTAIN",_pickupLZPos,random(360),false,_eventFaction,true,true] call ALIVE_fnc_createProfilesCrewedVehicle;
+
+                                    _transportProfiles pushback (_profiles select 0 select 2 select 4);
+                                    _transportVehicleProfiles pushback (_profiles select 1 select 2 select 4);
+
+                                    if(count _infantryProfiles > _i) then {
+                                        if(count (_infantryProfiles select _i) > 0) then {
+                                            {
+                                                if!(isNil "_x") then {
+                                                    _infantryProfile = [ALIVE_profileHandler, "getProfile", _x] call ALIVE_fnc_profileHandler;
+                                                    if!(isNil "_infantryProfile") then {
+                                                        [_infantryProfile, "position", _eventPosition] call ALIVE_fnc_profileEntity;
+                                                    };
+                                                };
+                                            } forEach (_infantryProfiles select _i);
+                                        };
+                                    };
+
+                                    [_logic, "spawnHelicopterFuelWatchdog", [
+                                        _profiles select 0 select 2 select 4,
+                                        _reinforcementPosition,
+                                        _eventFaction
+                                    ]] call MAINCLASS;
 
                                 };
 
@@ -4132,6 +4394,11 @@ switch(_operation) do {
                                     [_logic, "createMarker", [_remotePosition,_eventFaction,"ML HELI SPAWN"]] call MAINCLASS;
                                     [_logic, "createMarker", [_eventPosition,_eventFaction,"ML DESTINATION"]] call MAINCLASS;
                                 };
+                                case "HELI_PARADROP": {
+                                    [_logic, "createMarker", [_reinforcementPosition,_eventFaction,"ML BASE"]] call MAINCLASS;
+                                    [_logic, "createMarker", [_remotePosition,_eventFaction,"ML PARADROP SPAWN"]] call MAINCLASS;
+                                    [_logic, "createMarker", [_eventPosition,_eventFaction,"ML DROP ZONE"]] call MAINCLASS;
+                                };
                                 case "AIRDROP": {
                                     [_logic, "createMarker", [_eventPosition,_eventFaction,"ML AIRDROP"]] call MAINCLASS;
                                 };
@@ -4176,6 +4443,14 @@ switch(_operation) do {
                                     [_event, "state", "heliTransportStart"] call ALIVE_fnc_hashSet;
 
                                     // dispatch event
+                                    _logEvent = ['LOGISTICS_INSERTION', [_reinforcementPosition,_eventFaction,_side,_eventID],"Logistics"] call ALIVE_fnc_event;
+                                    [ALIVE_eventLog, "addEvent",_logEvent] call ALIVE_fnc_eventLog;
+
+                                };
+                                case "HELI_PARADROP": {
+
+                                    [_event, "state", "heliParadropStart"] call ALIVE_fnc_hashSet;
+
                                     _logEvent = ['LOGISTICS_INSERTION', [_reinforcementPosition,_eventFaction,_side,_eventID],"Logistics"] call ALIVE_fnc_event;
                                     [ALIVE_eventLog, "addEvent",_logEvent] call ALIVE_fnc_eventLog;
 
@@ -4256,11 +4531,12 @@ switch(_operation) do {
                     private _qID    = [_x, "id"]    call ALIVE_fnc_hashGet;
                     private _qData  = [_x, "data"]  call ALIVE_fnc_hashGet;
                     private _qType  = if (count _qData > 4) then { _qData select 4 } else { "" };
-                    if (_qID != _eventID && _qType == "HELI_INSERT") then {
+                    if (_qID != _eventID && _qType in ["HELI_INSERT","HELI_PARADROP"]) then {
                         if (_qState in [
                             "transportLoad","transportLoadWait","transportStart","transportTravel",
                             "heliTransport","heliTransportUnloadWait","heliTransportComplete",
-                            "heliTransportReturn","heliTransportReturnWait"
+                            "heliTransportReturn","heliTransportReturnWait",
+                            "heliParadropStart","heliParadropFly","heliParadropReturn","heliParadropReturnWait"
                         ]) then {
                             _activeHeliCount = _activeHeliCount + 1;
                         };
@@ -5038,12 +5314,8 @@ switch(_operation) do {
 
                         // Skip helicopters - they have their own delivery watchdog
                         private _vehClass = _vehProfile select 2 select 11;
-                        private _isHeli = (count (configProperties [
-                            configFile >> "CfgVehicles" >> _vehClass,
-                            "configName _x == 'simulation'", true
-                        ]) > 0) && {
-                            [configFile >> "CfgVehicles" >> _vehClass >> "simulation", ""] call ALiVE_fnc_getConfigValue == "helicopter"
-                        };
+                        private _simType = getText (configFile >> "CfgVehicles" >> _vehClass >> "simulation");
+                        private _isHeli = (_simType == "helicopter");
                         if (_isHeli) then { continue };
 
                         private _isActive = _vehProfile select 2 select 1;
@@ -5722,6 +5994,291 @@ switch(_operation) do {
                     [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
                 };
             };
+
+            // HELI PARADROP ---------------------------------------------------------------
+
+            case "heliParadropStart": {
+
+                private ["_transportProfiles","_infantryProfiles","_profileWaypoint","_profile","_count"];
+                _transportProfiles = _eventTransportProfiles;
+                _infantryProfiles  = [_eventCargoProfiles, 'infantry'] call ALIVE_fnc_hashGet;
+
+                _count = [_logic, "checkEvent", _event] call MAINCLASS;
+                if(_count == 0) exitWith {
+                    [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
+                    [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                };
+
+                private _activeHeliCount = 0;
+                {
+                    private _qState = [_x, "state"] call ALIVE_fnc_hashGet;
+                    private _qID    = [_x, "id"]    call ALIVE_fnc_hashGet;
+                    private _qData  = [_x, "data"]  call ALIVE_fnc_hashGet;
+                    private _qType  = if (count _qData > 4) then { _qData select 4 } else { "" };
+                    if (_qID != _eventID && _qType in ["HELI_INSERT","HELI_PARADROP"]) then {
+                        if (_qState in [
+                            "heliTransport","heliTransportUnloadWait","heliTransportComplete",
+                            "heliTransportReturn","heliTransportReturnWait",
+                            "heliParadropFly","heliParadropReturn","heliParadropReturnWait"
+                        ]) then {
+                            _activeHeliCount = _activeHeliCount + 1;
+                        };
+                    };
+                } forEach (_eventQueue select 2);
+
+                if (_activeHeliCount >= 2) exitWith {
+                    if (_debug) then {
+                        ["ML - heliParadropStart: Throttle - %1 heli events in flight, deferring %2.",
+                            _activeHeliCount, _eventID] call ALiVE_fnc_dump;
+                    };
+                };
+
+                [_event, "finalDestination", _eventPosition getPos [random(DESTINATION_VARIANCE), random(360)]] call ALIVE_fnc_hashSet;
+
+                private _paradropHeight = PARADROP_HEIGHT;
+
+                {
+                    private _dropWPPos = +_eventPosition;
+                    _dropWPPos set [2, _paradropHeight];
+                    _profileWaypoint = [_dropWPPos, 400, "MOVE", "NORMAL", 100, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                    _profile = [ALIVE_profileHandler, "getProfile", _x] call ALIVE_fnc_profileHandler;
+                    if (!isNil "_profile") then {
+                        [_profile, "addWaypoint", _profileWaypoint] call ALIVE_fnc_profileEntity;
+
+                        private _tIdx = _transportProfiles find _x;
+                        private _groupInfantryIDs = if (_tIdx >= 0 && _tIdx < count _infantryProfiles) then {
+                            _infantryProfiles select _tIdx
+                        } else { [] };
+
+                        private _vProfID = "";
+                        if (_tIdx >= 0 && _tIdx < count _eventTransportVehiclesProfiles) then {
+                            _vProfID = _eventTransportVehiclesProfiles select _tIdx;
+                        };
+
+                        private _returnPos = [_reinforcementPrimaryObjective, "center"] call ALIVE_fnc_hashGet;
+
+                        [_logic, "spawnHeliParadropWatchdog", [
+                            _x, _vProfID, _eventPosition, _returnPos, _groupInfantryIDs, _paradropHeight, _debug
+                        ]] call MAINCLASS;
+
+                        if (_debug) then {
+                            ["ML - heliParadropStart: Watchdog started for transport %1 dropping %2 groups.",
+                                _x, count _groupInfantryIDs] call ALiVE_fnc_dump;
+                        };
+
+                    } else {
+                        ["ML - heliParadropStart: WARNING transport profile %1 nil, skipping.", _x] call ALiVE_fnc_dump;
+                    };
+                } forEach _transportProfiles;
+
+                [_event, "state", "heliParadropFly"] call ALIVE_fnc_hashSet;
+                [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+
+                if (_debug) then {
+                    ["ML - heliParadropStart: %1 helis dispatched. Event: %2",
+                        count _transportProfiles, _eventID] call ALiVE_fnc_dump;
+                };
+            };
+
+            case "heliParadropFly": {
+
+                private _count = [_logic, "checkEvent", _event] call MAINCLASS;
+                if (_count == 0) exitWith {
+                    [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
+                    [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                };
+
+                private _waitTotalIterations = 300;
+                private _waitIterations = _eventStateData param [0, 0];
+                if (isNil "_waitIterations" || typeName _waitIterations != "SCALAR") then { _waitIterations = 0; };
+
+                private _allDropped = true;
+                private _anyAlive   = false;
+
+                {
+                    private _tProfID  = _x;
+                    private _tProfile = [ALIVE_profileHandler, "getProfile", _tProfID] call ALIVE_fnc_profileHandler;
+                    if (!isNil "_tProfile") then {
+                        _anyAlive = true;
+                        private _completed = if (isNil "ALIVE_ML_paradropComplete") then { false } else {
+                            _tProfID in ALIVE_ML_paradropComplete
+                        };
+                        if (!_completed) then { _allDropped = false; };
+                        if (_debug) then {
+                            ["ML - heliParadropFly: transport %1 profile=%2 completed=%3", _tProfID, (!isNil "_tProfile"), _completed] call ALiVE_fnc_dump;
+                        };
+                    } else {
+                        if (_debug) then {
+                            ["ML - heliParadropFly: transport %1 profile=NIL (gone)", _tProfID] call ALiVE_fnc_dump;
+                        };
+                    };
+                } forEach _eventTransportProfiles;
+
+                if ((_allDropped || _waitIterations > _waitTotalIterations) || (!_anyAlive && _waitIterations > 5)) then {
+                    if (_debug) then {
+                        ["ML - heliParadropFly: Drops complete. Moving to heliParadropReturn. Event: %1", _eventID] call ALiVE_fnc_dump;
+                    };
+                    _eventStateData set [0, 0];
+                    [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                    [_event, "state", "heliParadropReturn"] call ALIVE_fnc_hashSet;
+                    [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                } else {
+                    _waitIterations = _waitIterations + 1;
+                    _eventStateData set [0, _waitIterations];
+                    [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                    if (_debug) then {
+                        ["ML - heliParadropFly: Waiting for drops. iter=%1/%2 Event: %3",
+                            _waitIterations, _waitTotalIterations, _eventID] call ALiVE_fnc_dump;
+                    };
+                };
+            };
+
+            case "heliParadropReturn": {
+
+                private _count = [_logic, "checkEvent", _event] call MAINCLASS;
+                if (_count == 0 && count _eventTransportProfiles == 0) exitWith {
+                    [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
+                    [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                };
+
+                // Mirror heliTransportReturn: 3-waypoint egress to avoid AI hover issues.
+                // Profile waypoints must use 2D/terrain positions -- explicit Z causes descent.
+                private _reinforcementPosition = [_reinforcementPrimaryObjective, "center"] call ALIVE_fnc_hashGet;
+                private _eventDestination = [_event, "finalDestination"] call ALIVE_fnc_hashGet;
+                private _returnDest = if (count _eventDestination > 1) then {
+                    private _egressDir = _eventDestination getDir _reinforcementPosition;
+                    _reinforcementPosition getPos [1500, _egressDir]
+                } else {
+                    _reinforcementPosition getPos [1500, random 360]
+                };
+
+                {
+                    private _tProfile = [ALIVE_profileHandler, "getProfile", _x] call ALIVE_fnc_profileHandler;
+                    if (!isNil "_tProfile") then {
+                        private _tPos = _tProfile select 2 select 2;
+
+                        private _leaveDir = [(_tPos getDir _reinforcementPosition) - 180] call ALiVE_fnc_modDegrees;
+                        private _turnDirOffset = if (random 1 > 0.5) then { 50 } else { -50 };
+                        private _leaveDist = 300 + (random 200);
+
+                        private _leavePosStraight = _tPos getPos [_leaveDist, _leaveDir];
+                        private _leavePosTurn     = _tPos getPos [_leaveDist * 1.5, [_leaveDir + _turnDirOffset] call ALiVE_fnc_modDegrees];
+
+                        private _wpStraight = [_leavePosStraight, 100, "MOVE", "LIMITED", 300, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                        private _wpTurn     = [_leavePosTurn,     100, "MOVE", "NORMAL",  300, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+                        private _wpFinal    = [_returnDest,       100, "MOVE", "NORMAL",  300, [], "LINE"] call ALIVE_fnc_createProfileWaypoint;
+
+                        [_tProfile, "clearWaypoints"] call ALIVE_fnc_profileEntity;
+                        [_tProfile, "addWaypoint", _wpStraight] call ALIVE_fnc_profileEntity;
+                        [_tProfile, "addWaypoint", _wpTurn]     call ALIVE_fnc_profileEntity;
+                        [_tProfile, "addWaypoint", _wpFinal]    call ALIVE_fnc_profileEntity;
+
+                        if (_debug) then {
+                            ["ML - heliParadropReturn: RTB issued to %1. exit->%2 turn->%3 base->%4", _x, _leavePosStraight, _leavePosTurn, _returnDest] call ALiVE_fnc_dump;
+                        };
+                    };
+                } forEach _eventTransportProfiles;
+
+                _eventStateData set [0, 0];
+                [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                [_event, "state", "heliParadropReturnWait"] call ALIVE_fnc_hashSet;
+                [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+            };
+
+            case "heliParadropReturnWait": {
+
+                private _count = [_logic, "checkEvent", _event] call MAINCLASS;
+                if (_count == 0 && count _eventTransportProfiles == 0) exitWith {
+                    [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
+                    [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                };
+
+                if (count _eventTransportVehiclesProfiles > 0) then {
+                    private _waitTotalIterations = 60;
+                    private _waitIterations = _eventStateData param [0, 0];
+                    if (isNil "_waitIterations" || typeName _waitIterations != "SCALAR") then { _waitIterations = 0; };
+
+                    private _anyActive = 0;
+                    private _anyAlive  = 0;
+                    private _finalDest = [_event, "finalDestination"] call ALIVE_fnc_hashGet;
+
+                    {
+                        private _tProfile = [ALIVE_profileHandler, "getProfile", _x] call ALIVE_fnc_profileHandler;
+                        if (!isNil "_tProfile") then {
+                            private _active  = _tProfile select 2 select 1;
+                            private _vehicle = _tProfile select 2 select 10;
+
+                            private _farEnough = false;
+                            if (count _finalDest > 1) then {
+                                private _checkPos = if (!isNull _vehicle && alive _vehicle) then {
+                                    getPos _vehicle
+                                } else {
+                                    _tProfile select 2 select 2
+                                };
+                                _farEnough = _checkPos distance2D _finalDest > 1500;
+                            };
+
+                            if (_waitIterations > _waitTotalIterations || _farEnough) then {
+                                if (!isNull _vehicle && alive _vehicle && _active) then {
+                                    private _landPad = createVehicle ["Land_HelipadEmpty_F", getPosATL _vehicle, [], 0, "CAN_COLLIDE"];
+                                    _vehicle landAt _landPad;
+                                    [_vehicle, _landPad] spawn {
+                                        private _h = _this select 0; private _p = _this select 1; private _t = 0;
+                                        waitUntil { sleep 2; _t = _t + 2; isTouchingGround _h || !alive _h || _t > 30 };
+                                        deleteVehicle _p;
+                                        if (alive _h) then { _h setDamage 1; };
+                                    };
+                                };
+                                _active = false;
+                            };
+
+                            if (_active) then {
+                                if (!isNull _vehicle && alive _vehicle && canMove _vehicle) then {
+                                    _anyAlive = _anyAlive + 1;
+                                } else {
+                                    // damaged or gone -- destroy profiles
+                                    private _inCommand = _tProfile select 2 select 8;
+                                    if (count _inCommand > 0) then {
+                                        private _cmdProf = [ALIVE_profileHandler, "getProfile", _inCommand select 0] call ALIVE_fnc_profileHandler;
+                                        if (!isNil "_cmdProf") then { [_cmdProf, "destroy"] call ALIVE_fnc_profileEntity; };
+                                    };
+                                    [_tProfile, "destroy"] call ALIVE_fnc_profileVehicle;
+                                };
+                                _anyActive = _anyActive + 1;
+                            } else {
+                                private _inCommand = _tProfile select 2 select 8;
+                                if (count _inCommand > 0) then {
+                                    private _cmdProf = [ALIVE_profileHandler, "getProfile", _inCommand select 0] call ALIVE_fnc_profileHandler;
+                                    if (!isNil "_cmdProf") then { [_cmdProf, "destroy"] call ALIVE_fnc_profileEntity; };
+                                };
+                                [_tProfile, "destroy"] call ALIVE_fnc_profileVehicle;
+                            };
+                        };
+                    } forEach _eventTransportVehiclesProfiles;
+
+                    _waitIterations = _waitIterations + 1;
+                    _eventStateData set [0, _waitIterations];
+                    [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+
+                    if (_anyActive == 0 || _anyAlive == 0 || _waitIterations > _waitTotalIterations) then {
+                        ["ML - heliParadropReturnWait: RTB complete. Event: %1", _eventID] call ALiVE_fnc_dump;
+                        _eventStateData set [0, 0];
+                        [_event, "stateData", _eventStateData] call ALIVE_fnc_hashSet;
+                        [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
+                        [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                    } else {
+                        if (_debug) then {
+                            ["ML - heliParadropReturnWait: Waiting RTB. anyActive=%1 anyAlive=%2 iter=%3/%4. Event: %5",
+                                _anyActive, _anyAlive, _waitIterations, _waitTotalIterations, _eventID] call ALiVE_fnc_dump;
+                        };
+                    };
+                } else {
+                    [_event, "state", "eventComplete"] call ALIVE_fnc_hashSet;
+                    [_eventQueue, _eventID, _event] call ALIVE_fnc_hashSet;
+                };
+            };
+
+            // END HELI PARADROP -----------------------------------------------------------
 
             case "eventComplete": {
 
