@@ -389,6 +389,26 @@ switch(_operation) do {
             // set agent as active and store a reference to the unit on the agent
             [_logic,"unit",_unit] call ALIVE_fnc_hashSet;
             [_logic,"active",true] call ALIVE_fnc_hashSet;
+            
+            // ==============================================
+            //  ADVANCED CIVILIANS (AdvCiv) INTEGRATION HOOK
+            // ==============================================
+						if (!isNull _unit && {side _unit == civilian} && {alive _unit}) then {
+                private _role = _unit getVariable ["ALiVE_civ_role", ""];
+
+                if !(_role in ["priest","politician","townelder","major","muezzin"]) then {
+                    if (!isNil "ALiVE_fnc_advciv_initUnit") then {
+                        [_unit] call ALiVE_fnc_advciv_initUnit;
+
+                        if (_debug) then {
+                            ["ALiVE Advanced Civilians - Initialized enhanced civilian: %1 (AgentID: %2 | Role: %3)", _unit, _agentID, _role] call ALIVE_fnc_dump;
+                        };
+                    } else {
+                        ["ALiVE Advanced Civilians - WARNING: ALiVE_fnc_advciv_initUnit not found!"] call ALIVE_fnc_dump;
+                    };
+                };
+            };
+            
 
             // store the agent id on the active agents index
             [ALIVE_agentHandler,"setActive",[_agentID,_logic]] call ALIVE_fnc_agentHandler;
@@ -429,6 +449,12 @@ switch(_operation) do {
             };
 
             [_logic,"active",false] call ALIVE_fnc_hashSet;
+            
+            // Save AdvCiv state before despawn (for persistence across virtual/real cycles)
+            if (!isNull _unit && {_unit getVariable ["ALiVE_advciv_active", false]}) then {
+                private _savedState = [_unit] call ALiVE_fnc_advciv_saveStateToProfile;
+                [_logic, "advcivState", _savedState] call ALIVE_fnc_hashSet;
+            };
 
             private _position = getPosATL _unit;
             private _group = group _unit;

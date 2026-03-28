@@ -1767,6 +1767,237 @@
     <Spanish>Prácticamente nadie aquí los apoya.</Spanish>
     <Chinesesimp>这里几乎没有人支持你。</Chinesesimp>
 </Key>
+
+<!-- ============================================================ -->
+<!--  Advanced Civilians module parameters                        -->
+<!-- ============================================================ -->
+
+<!-- General -->
+<Key ID="STR_ALIVE_ADVCIV_ENABLED">
+    <English>Enable Advanced Civilians:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_ENABLED_COMMENT">
+    <English>Enable the Advanced Civilian behaviour system. Civilians will react to gunfire, panic, flee and hide.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_DEBUG">
+    <English>Advanced Civilians Debug:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_DEBUG_COMMENT">
+    <English>Show colour-coded state labels above civilian heads (for testing only).</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_TICK_RATE">
+    <English>Brain Tick Rate (s):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_TICK_RATE_COMMENT">
+    <English>Seconds between each civilian AI brain update. Lower values are more responsive but costlier. Default: 3.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_BATCH_SIZE">
+    <English>Brain Batch Size:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_BATCH_SIZE_COMMENT">
+    <English>Maximum number of civilians processed per brain tick. Set to 0 to process all active civilians each tick. Default: 0.</English>
+</Key>
+
+<!-- Trigger Ranges -->
+<Key ID="STR_ALIVE_ADVCIV_UNSUPPRESSED_RANGE">
+    <English>Unsuppressed Gunfire Range (m):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_UNSUPPRESSED_RANGE_COMMENT">
+    <English>Panic radius for unsuppressed (loud) gunfire. Civilians within this distance will react. Default: 250.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_SUPPRESSED_RANGE">
+    <English>Suppressed Gunfire Range (m):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_SUPPRESSED_RANGE_COMMENT">
+    <English>Panic radius for suppressed (silenced) gunfire. Civilians within this distance will react. Default: 50.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_EXPLOSION_RANGE">
+    <English>Explosion Range (m):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_EXPLOSION_RANGE_COMMENT">
+    <English>Panic radius for explosions and destroyed vehicles. Default: 500.</English>
+</Key>
+
+<!-- Behaviour -->
+<Key ID="STR_ALIVE_ADVCIV_REACTION_RADIUS">
+    <English>Reaction Radius (m):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_REACTION_RADIUS_COMMENT">
+    <English>General radius within which civilians become aware of danger sources. Default: 150.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_FLEE_RADIUS">
+    <English>Flee Radius (m):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_FLEE_RADIUS_COMMENT">
+    <English>How far civilians run from a danger source when fleeing. Default: 120.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_HOME_RADIUS">
+    <English>Home Radius (m):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_HOME_RADIUS_COMMENT">
+    <English>How far civilians wander from their spawn position during calm behaviour. Default: 150.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_CURIOSITY_RANGE">
+    <English>Curiosity Range (m):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_CURIOSITY_RANGE_COMMENT">
+    <English>Range at which civilians will notice and react to passing vehicles. Default: 200.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_PANIC_CHANCE">
+    <English>Panic Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_PANIC_CHANCE_COMMENT">
+    <English>Probability that a civilian panics when hearing gunfire nearby. Default: 0.7.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_ALERT_CHANCE">
+    <English>Alert Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_ALERT_CHANCE_COMMENT">
+    <English>Probability that a civilian becomes alert (rather than immediately panicking) on hearing gunfire. Default: 0.5.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_CASCADE_RADIUS">
+    <English>Panic Cascade Radius (m):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_CASCADE_RADIUS_COMMENT">
+    <English>Radius within which panic spreads from one civilian to another. Set to 0 to disable cascading. Default: 20.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_CASCADE_CHANCE">
+    <English>Panic Cascade Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_CASCADE_CHANCE_COMMENT">
+    <English>Probability that a panicking civilian spreads panic to nearby civilians. Default: 0.25.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_SHOT_MEMORY_TIME">
+    <English>Shot Memory Time (s):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_SHOT_MEMORY_TIME_COMMENT">
+    <English>Seconds after the last shot is heard before a civilian begins to calm down. Default: 30.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_HANDSUP_CHANCE">
+    <English>Hands Up Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_HANDSUP_CHANCE_COMMENT">
+    <English>Probability that a civilian stops and raises hands when hit. Default: 0.30.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_DROP_CHANCE">
+    <English>Drop Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_DROP_CHANCE_COMMENT">
+    <English>Probability that a civilian drops to the ground when hit. Default: 0.25.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_FREEZE_CHANCE">
+    <English>Freeze Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_FREEZE_CHANCE_COMMENT">
+    <English>Probability that a civilian freezes in place when hit. Default: 0.15.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_SCREAM_CHANCE">
+    <English>Scream Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_SCREAM_CHANCE_COMMENT">
+    <English>Probability that a civilian screams when hit. Default: 0.15.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_CRAWL_CHANCE">
+    <English>Crawl Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_CRAWL_CHANCE_COMMENT">
+    <English>Probability that a civilian crawls away when hit. Default: 0.15.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_HIDE_TIME_MIN">
+    <English>Min Hide Time (s):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_HIDE_TIME_MIN_COMMENT">
+    <English>Minimum seconds a civilian will remain hidden after danger. Default: 60.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_HIDE_TIME_MAX">
+    <English>Max Hide Time (s):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_HIDE_TIME_MAX_COMMENT">
+    <English>Maximum seconds a civilian will remain hidden after danger. Default: 180.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_PREFER_BUILDINGS">
+    <English>Prefer Buildings for Shelter:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_PREFER_BUILDINGS_COMMENT">
+    <English>When enabled, civilians will seek shelter inside buildings before finding open ground. Default: Yes.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_VOICE_ENABLED">
+    <English>Enable Voice Lines:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_VOICE_ENABLED_COMMENT">
+    <English>Allow civilians to shout and scream in reaction to gunfire and being hit. Default: Yes.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_VOICE_CHANCE">
+    <English>Voice Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_VOICE_CHANCE_COMMENT">
+    <English>Probability that a civilian plays a voice line when reacting to danger. Default: 0.6.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_ORDER_MENU_ENABLED">
+    <English>Enable Order Menu:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_ORDER_MENU_ENABLED_COMMENT">
+    <English>Show a scroll-wheel action menu on civilians allowing players to issue orders. Default: Yes.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_ORDER_MENU_RANGE">
+    <English>Order Menu Range (m):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_ORDER_MENU_RANGE_COMMENT">
+    <English>Maximum distance at which the civilian scroll menu is accessible. Default: 4.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_PLAYER_ANIMATIONS">
+    <English>Player Gesture Animations:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_PLAYER_ANIMATIONS_COMMENT">
+    <English>Play hand signal animations on the player when issuing orders to civilians. Default: Yes.</English>
+</Key>
+
+<!-- Vehicle -->
+<Key ID="STR_ALIVE_ADVCIV_VEHICLE_ESCAPE">
+    <English>Allow Vehicle Escape:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_VEHICLE_ESCAPE_COMMENT">
+    <English>Allow panicking civilians to attempt to escape in a nearby vehicle. Default: Yes.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_VEHICLE_ESCAPE_CHANCE">
+    <English>Vehicle Escape Chance (0-1):</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_VEHICLE_ESCAPE_CHANCE_COMMENT">
+    <English>Probability that a panicking civilian will attempt a vehicle escape rather than fleeing on foot. Default: 0.3.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_NO_STEAL_MILITARY">
+    <English>No Military Vehicle Theft:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_NO_STEAL_MILITARY_COMMENT">
+    <English>Prevent civilians from stealing military vehicles when escaping. Default: Yes.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_NO_STEAL_USED">
+    <English>No Player-Used Vehicle Theft:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_NO_STEAL_USED_COMMENT">
+    <English>Prevent civilians from stealing vehicles that have previously been driven by players. Default: Yes.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_NO_STEAL_LOADED">
+    <English>No Loaded Vehicle Theft:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_NO_STEAL_LOADED_COMMENT">
+    <English>Prevent civilians from stealing vehicles that contain more items than the loaded threshold. Default: Yes.</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_LOADED_THRESHOLD">
+    <English>Loaded Vehicle Threshold:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_LOADED_THRESHOLD_COMMENT">
+    <English>Maximum number of items a vehicle may contain and still be considered empty for theft purposes. A medikit counts as 4. Default: 4.</English>
+</Key>
+
+<!-- Compatibility -->
+<Key ID="STR_ALIVE_ADVCIV_MISSION_CRITICAL">
+    <English>Mission-Critical Unit Check:</English>
+</Key>
+<Key ID="STR_ALIVE_ADVCIV_MISSION_CRITICAL_COMMENT">
+    <English>Skip civilians in synced groups, mixed military/civilian convoys, or marked as mission-critical. Default: Yes.</English>
+</Key>
+
 </Container>
 
 </Package></Project>

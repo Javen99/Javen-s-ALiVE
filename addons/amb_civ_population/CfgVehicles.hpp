@@ -274,6 +274,385 @@ class CfgVehicles {
                 typeName = "BOOL";
                 defaultValue = 0;
             };
+
+            // ----------------------------------------------------------------
+            //  Advanced Civilians - General
+            // ----------------------------------------------------------------
+            class advciv_enabled
+            {
+                displayName = "$STR_ALIVE_ADVCIV_ENABLED";
+                description = "$STR_ALIVE_ADVCIV_ENABLED_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
+            class advciv_debug
+            {
+                displayName = "$STR_ALIVE_ADVCIV_DEBUG";
+                description = "$STR_ALIVE_ADVCIV_DEBUG_COMMENT";
+                class Values
+                {
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                        default = 1;
+                    };
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                    };
+                };
+            };
+            class advciv_tickRate
+            {
+                displayName = "$STR_ALIVE_ADVCIV_TICK_RATE";
+                description = "$STR_ALIVE_ADVCIV_TICK_RATE_COMMENT";
+                defaultvalue = "3";
+            };
+            class advciv_batchSize
+            {
+                displayName = "$STR_ALIVE_ADVCIV_BATCH_SIZE";
+                description = "$STR_ALIVE_ADVCIV_BATCH_SIZE_COMMENT";
+                defaultvalue = "0";
+            };
+
+            // ----------------------------------------------------------------
+            //  Advanced Civilians - Trigger Ranges
+            // ----------------------------------------------------------------
+            class advciv_unsuppressedRange
+            {
+                displayName = "$STR_ALIVE_ADVCIV_UNSUPPRESSED_RANGE";
+                description = "$STR_ALIVE_ADVCIV_UNSUPPRESSED_RANGE_COMMENT";
+                defaultvalue = "250";
+            };
+            class advciv_suppressedRange
+            {
+                displayName = "$STR_ALIVE_ADVCIV_SUPPRESSED_RANGE";
+                description = "$STR_ALIVE_ADVCIV_SUPPRESSED_RANGE_COMMENT";
+                defaultvalue = "50";
+            };
+            class advciv_explosionRange
+            {
+                displayName = "$STR_ALIVE_ADVCIV_EXPLOSION_RANGE";
+                description = "$STR_ALIVE_ADVCIV_EXPLOSION_RANGE_COMMENT";
+                defaultvalue = "500";
+            };
+
+            // ----------------------------------------------------------------
+            //  Advanced Civilians - Behaviour
+            // ----------------------------------------------------------------
+            class advciv_reactionRadius
+            {
+                displayName = "$STR_ALIVE_ADVCIV_REACTION_RADIUS";
+                description = "$STR_ALIVE_ADVCIV_REACTION_RADIUS_COMMENT";
+                defaultvalue = "150";
+            };
+            class advciv_fleeRadius
+            {
+                displayName = "$STR_ALIVE_ADVCIV_FLEE_RADIUS";
+                description = "$STR_ALIVE_ADVCIV_FLEE_RADIUS_COMMENT";
+                defaultvalue = "120";
+            };
+            class advciv_homeRadius
+            {
+                displayName = "$STR_ALIVE_ADVCIV_HOME_RADIUS";
+                description = "$STR_ALIVE_ADVCIV_HOME_RADIUS_COMMENT";
+                defaultvalue = "150";
+            };
+            class advciv_curiosityRange
+            {
+                displayName = "$STR_ALIVE_ADVCIV_CURIOSITY_RANGE";
+                description = "$STR_ALIVE_ADVCIV_CURIOSITY_RANGE_COMMENT";
+                defaultvalue = "200";
+            };
+            class advciv_panicChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_PANIC_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_PANIC_CHANCE_COMMENT";
+                defaultvalue = "0.7";
+            };
+            class advciv_alertChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_ALERT_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_ALERT_CHANCE_COMMENT";
+                defaultvalue = "0.5";
+            };
+            class advciv_cascadeRadius
+            {
+                displayName = "$STR_ALIVE_ADVCIV_CASCADE_RADIUS";
+                description = "$STR_ALIVE_ADVCIV_CASCADE_RADIUS_COMMENT";
+                defaultvalue = "20";
+            };
+            class advciv_cascadeChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_CASCADE_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_CASCADE_CHANCE_COMMENT";
+                defaultvalue = "0.25";
+            };
+            class advciv_shotMemoryTime
+            {
+                displayName = "$STR_ALIVE_ADVCIV_SHOT_MEMORY_TIME";
+                description = "$STR_ALIVE_ADVCIV_SHOT_MEMORY_TIME_COMMENT";
+                defaultvalue = "30";
+            };
+            class advciv_handsUpChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_HANDSUP_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_HANDSUP_CHANCE_COMMENT";
+                defaultvalue = "0.30";
+            };
+            class advciv_dropChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_DROP_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_DROP_CHANCE_COMMENT";
+                defaultvalue = "0.25";
+            };
+            class advciv_freezeChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_FREEZE_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_FREEZE_CHANCE_COMMENT";
+                defaultvalue = "0.15";
+            };
+            class advciv_screamChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_SCREAM_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_SCREAM_CHANCE_COMMENT";
+                defaultvalue = "0.15";
+            };
+            class advciv_crawlChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_CRAWL_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_CRAWL_CHANCE_COMMENT";
+                defaultvalue = "0.15";
+            };
+            class advciv_hideTimeMin
+            {
+                displayName = "$STR_ALIVE_ADVCIV_HIDE_TIME_MIN";
+                description = "$STR_ALIVE_ADVCIV_HIDE_TIME_MIN_COMMENT";
+                defaultvalue = "60";
+            };
+            class advciv_hideTimeMax
+            {
+                displayName = "$STR_ALIVE_ADVCIV_HIDE_TIME_MAX";
+                description = "$STR_ALIVE_ADVCIV_HIDE_TIME_MAX_COMMENT";
+                defaultvalue = "180";
+            };
+            class advciv_preferBuildings
+            {
+                displayName = "$STR_ALIVE_ADVCIV_PREFER_BUILDINGS";
+                description = "$STR_ALIVE_ADVCIV_PREFER_BUILDINGS_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
+            class advciv_voiceEnabled
+            {
+                displayName = "$STR_ALIVE_ADVCIV_VOICE_ENABLED";
+                description = "$STR_ALIVE_ADVCIV_VOICE_ENABLED_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
+            class advciv_voiceChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_VOICE_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_VOICE_CHANCE_COMMENT";
+                defaultvalue = "0.6";
+            };
+            class advciv_orderMenuEnabled
+            {
+                displayName = "$STR_ALIVE_ADVCIV_ORDER_MENU_ENABLED";
+                description = "$STR_ALIVE_ADVCIV_ORDER_MENU_ENABLED_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
+            class advciv_orderMenuRange
+            {
+                displayName = "$STR_ALIVE_ADVCIV_ORDER_MENU_RANGE";
+                description = "$STR_ALIVE_ADVCIV_ORDER_MENU_RANGE_COMMENT";
+                defaultvalue = "4";
+            };
+            class advciv_playerAnimations
+            {
+                displayName = "$STR_ALIVE_ADVCIV_PLAYER_ANIMATIONS";
+                description = "$STR_ALIVE_ADVCIV_PLAYER_ANIMATIONS_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
+
+            // ----------------------------------------------------------------
+            //  Advanced Civilians - Vehicle
+            // ----------------------------------------------------------------
+            class advciv_vehicleEscape
+            {
+                displayName = "$STR_ALIVE_ADVCIV_VEHICLE_ESCAPE";
+                description = "$STR_ALIVE_ADVCIV_VEHICLE_ESCAPE_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
+            class advciv_vehicleEscapeChance
+            {
+                displayName = "$STR_ALIVE_ADVCIV_VEHICLE_ESCAPE_CHANCE";
+                description = "$STR_ALIVE_ADVCIV_VEHICLE_ESCAPE_CHANCE_COMMENT";
+                defaultvalue = "0.3";
+            };
+            class advciv_noStealMilitary
+            {
+                displayName = "$STR_ALIVE_ADVCIV_NO_STEAL_MILITARY";
+                description = "$STR_ALIVE_ADVCIV_NO_STEAL_MILITARY_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
+            class advciv_noStealUsed
+            {
+                displayName = "$STR_ALIVE_ADVCIV_NO_STEAL_USED";
+                description = "$STR_ALIVE_ADVCIV_NO_STEAL_USED_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
+            class advciv_noStealLoaded
+            {
+                displayName = "$STR_ALIVE_ADVCIV_NO_STEAL_LOADED";
+                description = "$STR_ALIVE_ADVCIV_NO_STEAL_LOADED_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
+            class advciv_loadedThreshold
+            {
+                displayName = "$STR_ALIVE_ADVCIV_LOADED_THRESHOLD";
+                description = "$STR_ALIVE_ADVCIV_LOADED_THRESHOLD_COMMENT";
+                defaultvalue = "4";
+            };
+
+            // ----------------------------------------------------------------
+            //  Advanced Civilians - Compatibility
+            // ----------------------------------------------------------------
+            class advciv_missionCriticalCheck
+            {
+                displayName = "$STR_ALIVE_ADVCIV_MISSION_CRITICAL";
+                description = "$STR_ALIVE_ADVCIV_MISSION_CRITICAL_COMMENT";
+                class Values
+                {
+                    class Yes
+                    {
+                        name = "Yes";
+                        value = true;
+                        default = 1;
+                    };
+                    class No
+                    {
+                        name = "No";
+                        value = false;
+                    };
+                };
+            };
         };
 
     };

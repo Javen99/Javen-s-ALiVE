@@ -18,4 +18,17 @@ class Extended_PreInit_EventHandlers {
         init = QUOTE(call COMPILE_FILE(XEH_preInit));
     };
 };
-
+class Extended_PostInit_EventHandlers {
+    class ADDON {
+        init = QUOTE(call COMPILE_FILE(XEH_postInit));
+    };
+};
+class ALiVE_amb_civ_population_advciv {
+    name = "ALiVE Advanced Civilians";
+    author = "Jman";
+    url = "";
+    units[] = {};
+    weapons[] = {};
+    requiredVersion = 1.0;
+    requiredAddons[] = {"ALiVE_amb_civ_population", "cba_xeh"};
+};

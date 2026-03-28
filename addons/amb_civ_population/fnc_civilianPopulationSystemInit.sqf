@@ -15,7 +15,7 @@ Nil
 See Also:
 
 Author:
-ARjay
+ARjay, Jman (advanced civs)
 Peer Reviewed:
 nil
 ---------------------------------------------------------------------------- */
@@ -50,6 +50,163 @@ if(isServer) then {
 
     private _customRationItems = [_logic getvariable "customRationItems", " ", ""] call CBA_fnc_replace;
     _customRationItems = [_customRationItems, ","] call CBA_fnc_split;
+
+    // ----------------------------------------------------------------
+    //  Advanced Civilians - read module args and set globals
+    // ----------------------------------------------------------------
+    private _advciv_enabled          = (_logic getVariable ["advciv_enabled",          "true"]) isEqualTo "true";
+    private _advciv_debug            = (_logic getVariable ["advciv_debug",            "false"]) isEqualTo "true";
+    private _advciv_tickRate         = parseNumber (_logic getVariable ["advciv_tickRate",         "3"]);
+    private _advciv_batchSize        = parseNumber (_logic getVariable ["advciv_batchSize",        "0"]);
+
+    private _advciv_unsuppressedRange = parseNumber (_logic getVariable ["advciv_unsuppressedRange", "250"]);
+    private _advciv_suppressedRange   = parseNumber (_logic getVariable ["advciv_suppressedRange",   "50"]);
+    private _advciv_explosionRange    = parseNumber (_logic getVariable ["advciv_explosionRange",    "500"]);
+
+    private _advciv_reactionRadius   = parseNumber (_logic getVariable ["advciv_reactionRadius",   "150"]);
+    private _advciv_fleeRadius       = parseNumber (_logic getVariable ["advciv_fleeRadius",       "120"]);
+    private _advciv_homeRadius       = parseNumber (_logic getVariable ["advciv_homeRadius",       "150"]);
+    private _advciv_curiosityRange   = parseNumber (_logic getVariable ["advciv_curiosityRange",   "200"]);
+    private _advciv_panicChance      = parseNumber (_logic getVariable ["advciv_panicChance",      "0.7"]);
+    private _advciv_alertChance      = parseNumber (_logic getVariable ["advciv_alertChance",      "0.5"]);
+    private _advciv_cascadeRadius    = parseNumber (_logic getVariable ["advciv_cascadeRadius",    "20"]);
+    private _advciv_cascadeChance    = parseNumber (_logic getVariable ["advciv_cascadeChance",    "0.25"]);
+    private _advciv_shotMemoryTime   = parseNumber (_logic getVariable ["advciv_shotMemoryTime",   "30"]);
+    private _advciv_handsUpChance    = parseNumber (_logic getVariable ["advciv_handsUpChance",    "0.30"]);
+    private _advciv_dropChance       = parseNumber (_logic getVariable ["advciv_dropChance",       "0.25"]);
+    private _advciv_freezeChance     = parseNumber (_logic getVariable ["advciv_freezeChance",     "0.15"]);
+    private _advciv_screamChance     = parseNumber (_logic getVariable ["advciv_screamChance",     "0.15"]);
+    private _advciv_crawlChance      = parseNumber (_logic getVariable ["advciv_crawlChance",      "0.15"]);
+    private _advciv_hideTimeMin      = parseNumber (_logic getVariable ["advciv_hideTimeMin",      "60"]);
+    private _advciv_hideTimeMax      = parseNumber (_logic getVariable ["advciv_hideTimeMax",      "180"]);
+    private _advciv_preferBuildings  = (_logic getVariable ["advciv_preferBuildings",  "true"])  isEqualTo "true";
+    private _advciv_voiceEnabled     = (_logic getVariable ["advciv_voiceEnabled",     "true"])  isEqualTo "true";
+    private _advciv_voiceChance      = parseNumber (_logic getVariable ["advciv_voiceChance",      "0.6"]);
+    private _advciv_orderMenuEnabled = (_logic getVariable ["advciv_orderMenuEnabled", "true"])  isEqualTo "true";
+    private _advciv_orderMenuRange   = parseNumber (_logic getVariable ["advciv_orderMenuRange",   "4"]);
+    private _advciv_playerAnimations = (_logic getVariable ["advciv_playerAnimations", "true"])  isEqualTo "true";
+
+    private _advciv_vehicleEscape       = (_logic getVariable ["advciv_vehicleEscape",       "true"])  isEqualTo "true";
+    private _advciv_vehicleEscapeChance = parseNumber (_logic getVariable ["advciv_vehicleEscapeChance", "0.3"]);
+    private _advciv_noStealMilitary     = (_logic getVariable ["advciv_noStealMilitary",     "true"])  isEqualTo "true";
+    private _advciv_noStealUsed         = (_logic getVariable ["advciv_noStealUsed",         "true"])  isEqualTo "true";
+    private _advciv_noStealLoaded       = (_logic getVariable ["advciv_noStealLoaded",       "true"])  isEqualTo "true";
+    private _advciv_loadedThreshold     = parseNumber (_logic getVariable ["advciv_loadedThreshold",     "4"]);
+
+    private _advciv_missionCriticalCheck = (_logic getVariable ["advciv_missionCriticalCheck", "true"])  isEqualTo "true";
+
+    // Publish all Advanced Civilian globals
+    ALiVE_advciv_enabled          = _advciv_enabled;          publicVariable "ALiVE_advciv_enabled";
+    ALiVE_advciv_debug            = _advciv_debug;            publicVariable "ALiVE_advciv_debug";
+    ALiVE_advciv_tickRate         = _advciv_tickRate;         publicVariable "ALiVE_advciv_tickRate";
+    ALiVE_advciv_batchSize        = _advciv_batchSize;        publicVariable "ALiVE_advciv_batchSize";
+
+    ALiVE_advciv_unsuppressedRange = _advciv_unsuppressedRange; publicVariable "ALiVE_advciv_unsuppressedRange";
+    ALiVE_advciv_suppressedRange   = _advciv_suppressedRange;   publicVariable "ALiVE_advciv_suppressedRange";
+    ALiVE_advciv_explosionRange    = _advciv_explosionRange;    publicVariable "ALiVE_advciv_explosionRange";
+
+    ALiVE_advciv_reactionRadius   = _advciv_reactionRadius;   publicVariable "ALiVE_advciv_reactionRadius";
+    ALiVE_advciv_fleeRadius       = _advciv_fleeRadius;       publicVariable "ALiVE_advciv_fleeRadius";
+    ALiVE_advciv_homeRadius       = _advciv_homeRadius;       publicVariable "ALiVE_advciv_homeRadius";
+    ALiVE_advciv_curiosityRange   = _advciv_curiosityRange;   publicVariable "ALiVE_advciv_curiosityRange";
+    ALiVE_advciv_panicChance      = _advciv_panicChance;      publicVariable "ALiVE_advciv_panicChance";
+    ALiVE_advciv_alertChance      = _advciv_alertChance;      publicVariable "ALiVE_advciv_alertChance";
+    ALiVE_advciv_cascadeRadius    = _advciv_cascadeRadius;    publicVariable "ALiVE_advciv_cascadeRadius";
+    ALiVE_advciv_cascadeChance    = _advciv_cascadeChance;    publicVariable "ALiVE_advciv_cascadeChance";
+    ALiVE_advciv_shotMemoryTime   = _advciv_shotMemoryTime;   publicVariable "ALiVE_advciv_shotMemoryTime";
+    ALiVE_advciv_handsUpChance    = _advciv_handsUpChance;    publicVariable "ALiVE_advciv_handsUpChance";
+    ALiVE_advciv_dropChance       = _advciv_dropChance;       publicVariable "ALiVE_advciv_dropChance";
+    ALiVE_advciv_freezeChance     = _advciv_freezeChance;     publicVariable "ALiVE_advciv_freezeChance";
+    ALiVE_advciv_screamChance     = _advciv_screamChance;     publicVariable "ALiVE_advciv_screamChance";
+    ALiVE_advciv_crawlChance      = _advciv_crawlChance;      publicVariable "ALiVE_advciv_crawlChance";
+    ALiVE_advciv_hideTimeMin      = _advciv_hideTimeMin;      publicVariable "ALiVE_advciv_hideTimeMin";
+    ALiVE_advciv_hideTimeMax      = _advciv_hideTimeMax;      publicVariable "ALiVE_advciv_hideTimeMax";
+    ALiVE_advciv_preferBuildings  = _advciv_preferBuildings;  publicVariable "ALiVE_advciv_preferBuildings";
+    ALiVE_advciv_voiceEnabled     = _advciv_voiceEnabled;     publicVariable "ALiVE_advciv_voiceEnabled";
+    ALiVE_advciv_voiceChance      = _advciv_voiceChance;      publicVariable "ALiVE_advciv_voiceChance";
+    ALiVE_advciv_orderMenuEnabled = _advciv_orderMenuEnabled; publicVariable "ALiVE_advciv_orderMenuEnabled";
+    ALiVE_advciv_orderMenuRange   = _advciv_orderMenuRange;   publicVariable "ALiVE_advciv_orderMenuRange";
+    ALiVE_advciv_playerAnimations = _advciv_playerAnimations; publicVariable "ALiVE_advciv_playerAnimations";
+
+    ALiVE_advciv_vehicleEscape       = _advciv_vehicleEscape;       publicVariable "ALiVE_advciv_vehicleEscape";
+    ALiVE_advciv_vehicleEscapeChance = _advciv_vehicleEscapeChance; publicVariable "ALiVE_advciv_vehicleEscapeChance";
+    ALiVE_advciv_noStealMilitary     = _advciv_noStealMilitary;     publicVariable "ALiVE_advciv_noStealMilitary";
+    ALiVE_advciv_noStealUsed         = _advciv_noStealUsed;         publicVariable "ALiVE_advciv_noStealUsed";
+    ALiVE_advciv_noStealLoaded       = _advciv_noStealLoaded;       publicVariable "ALiVE_advciv_noStealLoaded";
+    ALiVE_advciv_loadedThreshold     = _advciv_loadedThreshold;     publicVariable "ALiVE_advciv_loadedThreshold";
+
+    ALiVE_advciv_missionCriticalCheck = _advciv_missionCriticalCheck; publicVariable "ALiVE_advciv_missionCriticalCheck";
+
+    ALiVE_advciv_activeUnits = [];
+
+    // ----------------------------------------------------------------
+    //  Utility functions - defined globally and broadcast to all clients
+    // ----------------------------------------------------------------
+    ALiVE_fnc_advciv_isMissionCritical = {
+        params [["_unit", objNull]];
+        if (!ALiVE_advciv_missionCriticalCheck) exitWith { false };
+        if (isNull _unit) exitWith { false };
+        if (_unit getVariable ["ALiVE_advciv_blacklist", false]) exitWith { true };
+
+        private _grp = group _unit;
+        // Only block civs in mixed groups (civ + military together)
+        private _mixedGroup = { side _x != civilian } count (units _grp);
+        if (_mixedGroup > 0) exitWith { true };
+        if (count (synchronizedObjects _unit) > 0) exitWith { true };
+
+        // Smart curator detection: only block explicitly marked units
+        private _curated = false;
+        if (_unit getVariable ["ALiVE_curator_placed", false]) then { _curated = true; };
+        if (_curated) exitWith { true };
+
+        false
+    };
+    publicVariable "ALiVE_fnc_advciv_isMissionCritical";
+
+    ALiVE_fnc_advciv_isValidCiv = {
+        params [["_unit", objNull]];
+        if (isNull _unit) exitWith { false };
+        if (!alive _unit) exitWith { false };
+        if (isPlayer _unit) exitWith { false };
+        if (side _unit != civilian) exitWith { false };
+        if ([_unit] call ALiVE_fnc_advciv_isMissionCritical) exitWith { false };
+        true
+    };
+    publicVariable "ALiVE_fnc_advciv_isValidCiv";
+
+    // ----------------------------------------------------------------
+    //  Voice line arrays
+    // ----------------------------------------------------------------
+    ALiVE_advciv_voiceLines_panic  = [
+        "ALiVE_advciv_dont_shoot_1",
+        "ALiVE_advciv_dont_shoot_2",
+        "ALiVE_advciv_no_no",
+        "ALiVE_advciv_please_no",
+        "ALiVE_advciv_help",
+        "ALiVE_advciv_scream_1",
+        "ALiVE_advciv_scream_2"
+    ];
+    publicVariable "ALiVE_advciv_voiceLines_panic";
+
+    ALiVE_advciv_voiceLines_hit    = [
+        "ALiVE_advciv_dont_shoot_1",
+        "ALiVE_advciv_dont_shoot_2",
+        "ALiVE_advciv_no_no",
+        "ALiVE_advciv_please_no",
+        "ALiVE_advciv_scream_1",
+        "ALiVE_advciv_scream_2",
+        "ALiVE_advciv_crying"
+    ];
+    publicVariable "ALiVE_advciv_voiceLines_hit";
+
+    ALiVE_advciv_voiceLines_hiding = [
+        "ALiVE_advciv_please_no",
+        "ALiVE_advciv_go_away",
+        "ALiVE_advciv_crying"
+    ];
+    publicVariable "ALiVE_advciv_voiceLines_hiding";
+
+    ["ALiVE Advanced Civilians - Module parameters loaded. Enabled: %1", _advciv_enabled] call ALIVE_fnc_dump;
 
     waitUntil {!isnil "ALiVE_STATIC_DATA_LOADED"};
 

@@ -146,6 +146,77 @@ class cfgFunctions {
                 file = "\x\alive\addons\amb_civ_population\fnc_questionHandler.sqf";
                 RECOMPILE;
             };
+            
+            // ==============================================
+            //  ALiVE Advanced Civilians (AdvCiv) Integration
+            //  Branch: advanced-civilians
+            // ==============================================
+            class advciv_ambientLife {
+                description = "AdvCiv ambient life routines";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_ambientLife.sqf";
+                RECOMPILE;
+            };
+            class advciv_brainTick {
+                description = "AdvCiv brain tick";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_brainTick.sqf";
+                RECOMPILE;
+            };
+            class advciv_getSafePositions {
+                description = "AdvCiv get safe positions";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_getSafePositions.sqf";
+                RECOMPILE;
+            };
+            class advciv_handleExplosion {
+                description = "AdvCiv handle explosion";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_handleExplosion.sqf";
+                RECOMPILE;
+            };
+            class advciv_isVehicleProtected {
+                description = "AdvCiv is vehicle protected";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_isVehicleProtected.sqf";
+                RECOMPILE;
+            };
+            class advciv_initUnit {
+                description = "AdvCiv init unit";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_initUnit.sqf";
+                RECOMPILE;
+            };
+            class advciv_init {
+                description = "AdvCiv init";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_init.sqf";
+                RECOMPILE;
+            };
+            class advciv_handleFired {
+                description = "AdvCiv handle fired";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_handleFired.sqf";
+                RECOMPILE;
+            };
+            class advciv_brainLoop {
+                description = "AdvCiv brain loop";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_brainLoop.sqf";
+                RECOMPILE;
+            };
+            class advciv_orderMenu {
+                description = "AdvCiv order menu";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_orderMenu.sqf";
+                RECOMPILE;
+            };
+            class advciv_react {
+                description = "AdvCiv react";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_react.sqf";
+                RECOMPILE;
+            };
+            class advciv_findHouse {
+                description = "AdvCiv find house";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_findHouse.sqf";
+                RECOMPILE;
+            };
+            class advciv_saveStateToProfile {
+                description = "AdvCiv save state to profile";
+                file = "\x\alive\addons\amb_civ_population\fnc_advciv_saveStateToProfile.sqf";
+                RECOMPILE;
+            };
+            
 
         };
     };
