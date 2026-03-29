@@ -1,16 +1,46 @@
+/* ----------------------------------------------------------------------------
+Function: ALIVE_fnc_advciv_initUnit
+Description:
+    Initialises a single civilian unit into the AdvCiv system. Sets all
+    required state variables, configures AI flags, and attaches the Hit and
+    Deleted event handlers. The Hit handler manages vehicle-escape, hit-react
+    animations, and state transitions on damage. The Deleted handler removes
+    the unit from the active units array and cleans up its order menu remote
+    exec channel. Also registers FiredMan event handlers on players and other
+    non-civilian units to feed shot events into the reaction system. Finishes
+    by adding the order menu and starting the brain loop for the unit.
+Parameters:
+    _this select 0: OBJECT - The civilian unit to initialise
+Returns:
+    Nil
+See Also:
+    ALIVE_fnc_advciv_brainLoop, ALIVE_fnc_advciv_orderMenu,
+    ALIVE_fnc_advciv_handleFired, ALIVE_fnc_advciv_handleExplosion
+Author:
+    Jman (advanced civs)
+Peer Reviewed:
+    nil
+---------------------------------------------------------------------------- */
 
 params [["_unit", objNull, [objNull]]];
 
 if (isNull _unit || {!alive _unit}) exitWith {};
 
+// =========================================================================
+// FiredMan event handlers on players and non-civilian units.
+// These feed gunshot positions into the civilian reaction system.
+// Registered here so they're set up at the same time as the civilian itself.
+// =========================================================================
+
 if (isPlayer _unit) exitWith {
-    if (side _unit == civilian) exitWith {};
-    if (_unit getVariable ["ALiVE_advciv_firedEH", false]) exitWith {};
+    if (side _unit == civilian) exitWith {};   // Don't add to civilian players
+    if (_unit getVariable ["ALiVE_advciv_firedEH", false]) exitWith {};   // Already registered
     _unit setVariable ["ALiVE_advciv_firedEH", true];
 
     _unit addEventHandler ["FiredMan", {
         params ["_firer", "_weapon", "_muzzle", "_mode", "_ammo", "_magazine", "_projectile"];
 
+        // Rate-limit to avoid flooding the reaction system from automatic fire
         private _lastFired = _firer getVariable ["ALiVE_advciv_lastFiredTime", 0];
         if (time - _lastFired < 0.25) exitWith {};
         _firer setVariable ["ALiVE_advciv_lastFiredTime", time];
@@ -19,6 +49,7 @@ if (isPlayer _unit) exitWith {
         private _isInVehicle = (_veh != _firer);
         private _pos = if (_isInVehicle) then { getPos _veh } else { getPos _firer };
 
+        // Detect suppressor by checking whether a muzzle accessory is fitted
         private _hasSuppressor = false;
         if (!_isInVehicle && {_weapon != ""}) then {
             private _curWeapon = currentWeapon _firer;
@@ -33,6 +64,8 @@ if (isPlayer _unit) exitWith {
             };
         };
 
+        // Explosive ammo (rockets, grenades, etc.) is handled by handleExplosion
+        // via a projectile tracker rather than handleFired
         private _isExplosive = false;
         private _ammoConfig = configFile >> "CfgAmmo" >> _ammo;
         if (isClass _ammoConfig) then {
@@ -44,13 +77,15 @@ if (isPlayer _unit) exitWith {
 
         if (_isExplosive) then {
             if (!isNull _projectile) then {
+                // Track the projectile and trigger handleExplosion at impact point
                 private _trackData = [_projectile, _firer, time + 30, getPos _projectile];
                 [{
                     params ["_args", "_handle"];
                     _args params ["_proj", "_src", "_timeout", "_lastPos"];
                     if (!isNull _proj) then {
-                        _args set [3, getPos _proj];
+                        _args set [3, getPos _proj];   // Update last known position each frame
                     } else {
+                        // Projectile gone — fire explosion handler at last tracked position
                         [_lastPos, _src] remoteExecCall ["ALiVE_fnc_advciv_handleExplosion", 2];
                         [_handle] call CBA_fnc_removePerFrameHandler;
                     };
@@ -127,12 +162,14 @@ if (side _unit != civilian) exitWith {
 };
 
 if (!isServer) exitWith {};
-if (_unit getVariable ["ALiVE_advciv_active", false]) exitWith {};
-if ([_unit] call ALiVE_fnc_advciv_isMissionCritical) exitWith {};
+if (_unit getVariable ["ALiVE_advciv_active", false]) exitWith {};         // Already initialised
+if ([_unit] call ALiVE_fnc_advciv_isMissionCritical) exitWith {};          // Protected unit
 
+// =========================================================================
+// State variable initialisation
+// =========================================================================
 _unit setVariable ["ALiVE_advciv_active", true, true];
 _unit setVariable ["ALiVE_advciv_state", "CALM", true];
-// Add initial debug label
 if (ALiVE_advciv_debug) then {
     _unit setVariable ["ALiVE_advciv_dbgState", "CALM", true];
 };
@@ -146,7 +183,7 @@ _unit setVariable ["ALiVE_advciv_hidingBuilding", objNull, true];
 _unit setVariable ["ALiVE_advciv_hitReacting", false, true];
 _unit setVariable ["ALiVE_advciv_hitReactStart", 0];
 _unit setVariable ["ALiVE_advciv_panicRunStart", 0];
-_unit setVariable ["ALiVE_advciv_lastAction", time + 20 + random 40];
+_unit setVariable ["ALiVE_advciv_lastAction", time + 20 + random 40];   // Staggered start to spread load
 _unit setVariable ["ALiVE_advciv_actionType", "NONE", true];
 _unit setVariable ["ALiVE_advciv_lastVoice", 0];
 _unit setVariable ["ALiVE_advciv_vehicleEscaping", false, true];
@@ -157,6 +194,7 @@ _unit setVariable ["ALiVE_advciv_orderVehicle", objNull, true];
 _unit setVariable ["ALiVE_advciv_boarding", false, true];
 _unit setVariable ["ALiVE_advciv_lastShotTime", 0];
 
+// Disable fleeing AI and set baseline CARELESS/slow behaviour
 _unit allowFleeing 0;
 _unit enableAI "PATH";
 _unit setBehaviour "CARELESS";
@@ -164,17 +202,21 @@ _unit setSpeedMode "LIMITED";
 if (vehicle _unit == _unit) then { _unit setUnitPos "UP"; };
 
 
+// =========================================================================
+// Hit event handler — manages damage reactions and vehicle bail-out
+// =========================================================================
 _unit addEventHandler ["Hit", {
     params ["_unit", "_source", "_damage", "_instigator"];
 
     if (isNull _unit || {!alive _unit}) exitWith {};
     if (isPlayer _unit) exitWith {};
-    if (_damage < 0.01) exitWith {};
-    if (_unit getVariable ["ALiVE_advciv_hitReacting", false]) exitWith {};
+    if (_damage < 0.01) exitWith {};                                            // Ignore negligible hits
+    if (_unit getVariable ["ALiVE_advciv_hitReacting", false]) exitWith {};     // Already reacting
 
     _unit setVariable ["ALiVE_advciv_order", "NONE", true];
     _unit setVariable ["ALiVE_advciv_lastShotTime", time];
 
+    // Resolve danger position: prefer instigator, then source, then self
     private _dangerPos = getPos _unit;
     if (!isNull _instigator) then { _dangerPos = getPos _instigator; }
     else { if (!isNull _source) then { _dangerPos = getPos _source; }; };
@@ -184,6 +226,7 @@ _unit addEventHandler ["Hit", {
         private _veh = vehicle _unit;
 
         if (alive _veh && {driver _veh == _unit}) then {
+            // Unit is driving — accelerate away before eventually bailing out
             _unit setVariable ["ALiVE_advciv_vehicleEscaping", true, true];
             _unit setSpeedMode "FULL";
             private _escapeDir = if (!isNull _instigator) then {
@@ -197,6 +240,7 @@ _unit addEventHandler ["Hit", {
             _wp setWaypointSpeed "FULL";
             _wp setWaypointBehaviour "CARELESS";
 
+            // After a delay, exit the vehicle and transition to foot PANIC
             [{
                 params ["_u", "_v"];
                 if (alive _u && {vehicle _u == _v}) then {
@@ -218,6 +262,7 @@ _unit addEventHandler ["Hit", {
             }, [_unit, _veh], 8 + random 8] call CBA_fnc_waitAndExecute;
 
         } else {
+            // Passenger — bail out then play a hit react animation on foot
             if (alive _veh) then { doGetOut _unit; };
 
             [{
@@ -234,6 +279,7 @@ _unit addEventHandler ["Hit", {
         };
 
     } else {
+        // On foot — play hit reaction immediately
         _unit setVariable ["ALiVE_advciv_state", "HIT_REACT", true];
         _unit setVariable ["ALiVE_advciv_hitReacting", true, true];
         _unit setVariable ["ALiVE_advciv_hitReactStart", time];
@@ -242,18 +288,22 @@ _unit addEventHandler ["Hit", {
 }];
 
 
+// =========================================================================
+// Deleted event handler — deregisters the unit from all AdvCiv tracking
+// =========================================================================
 _unit addEventHandler ["Deleted", {
     params ["_unit"];
     _unit setVariable ["ALiVE_advciv_active", false];
     _unit setVariable ["ALiVE_advciv_brainRunning", false];
     ALiVE_advciv_activeUnits = ALiVE_advciv_activeUnits - [_unit];
+    // Clear any pending remote exec for this unit's order menu channel
     remoteExec ["", format ["ALiVE_advciv_menu%1", netId _unit]];
 }];
 
+// Register in the active units array, add the order menu, then start the brain loop
 [_unit] call ALiVE_fnc_advciv_orderMenu;
 [_unit] call ALiVE_fnc_advciv_brainLoop;
 
 if (ALiVE_advciv_debug) then {
     ["ALiVE Advanced Civilians - initUnit complete: %1 | in array: %2", _unit, _unit in ALiVE_advciv_activeUnits] call ALIVE_fnc_dump;
 };
-

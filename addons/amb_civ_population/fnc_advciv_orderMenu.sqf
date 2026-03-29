@@ -1,7 +1,30 @@
+/* ----------------------------------------------------------------------------
+Function: ALIVE_fnc_advciv_orderMenu
+Description:
+    Adds the AdvCiv player order action menu to a civilian unit. Attaches
+    addAction entries for all available direct commands: Follow Me, Stay Here,
+    Go Home, Hands Up, Get Down, Calm Down, and Kneel. Additionally checks for
+    nearby driveable vehicles at init time and adds a contextual Get In action
+    for each. If the ALiVE civilian interaction handler is present, appends
+    a visual separator and an ALiVE Interact dialog option. All actions are
+    range-gated by ALiVE_advciv_orderMenuRange and are only visible when the
+    civilian is alive.
+Parameters:
+    _this select 0: OBJECT - The civilian unit to attach actions to
+Returns:
+    Nil
+See Also:
+    ALIVE_fnc_advciv_react, ALIVE_fnc_advciv_initUnit
+Author:
+    Jman (advanced civs)
+Peer Reviewed:
+    nil
+---------------------------------------------------------------------------- */
+
 params [["_unit", objNull, [objNull]]];
 
 if (isNull _unit || {!alive _unit}) exitWith {};
-if (_unit getVariable ["ALiVE_advciv_orderMenuAdded", false]) exitWith {};
+if (_unit getVariable ["ALiVE_advciv_orderMenuAdded", false]) exitWith {};   // Don't double-add
 
 _unit setVariable ["ALiVE_advciv_orderMenuAdded", true];
 
@@ -119,11 +142,13 @@ _unit addAction [
     _range
 ];
 
-// --- GET IN VEHICLE (dynamic, only if vehicle nearby) ---
+// --- GET IN VEHICLE (dynamic, only if a suitable vehicle is nearby at init time) ---
+// Only vehicles with a free driver or cargo seat are shown. The vehicle
+// reference is passed via the action's _args so react can assign the correct seat.
 private _nearVehicles = nearestObjects [_unit, ["Car", "Truck", "Helicopter", "Plane", "Ship"], 10];
 _nearVehicles = _nearVehicles select {
     alive _x && {
-        (_x emptyPositions "cargo" > 0) || 
+        (_x emptyPositions "cargo" > 0) ||
         (_x emptyPositions "driver" > 0)
     }
 };
@@ -137,7 +162,7 @@ if (count _nearVehicles > 0) then {
             {
                 params ["_target", "_caller", "_id", "_args"];
                 _args params ["_vehicle"];
-                [_target, "GETIN", _vehicle] call ALiVE_fnc_advciv_react;  // Pass vehicle as 3rd param
+                [_target, "GETIN", _vehicle] call ALiVE_fnc_advciv_react;
             },
             [_veh],
             6,
@@ -151,29 +176,31 @@ if (count _nearVehicles > 0) then {
 };
 
 // =================================================================
-// ADD ALIVE INTERACT OPTION (if available)
+// ALiVE INTERACT OPTION (appended if the interaction handler exists)
+// Shown with a gold separator to visually distinguish it from the
+// AdvCiv quick commands above
 // =================================================================
 if (!isNil "ALiVE_civInteractHandler") then {
     _unit addAction [
-        "<t color='#FFD700'>────────────────</t>",  // Separator (gold)
+        "<t color='#FFD700'>────────────────</t>",
         {},
         [],
         5,
-        false,  // Can't be used
+        false,
         false,
         "",
-        "false",  // Never show (visual separator only)
+        "false",   // Condition always false — purely a visual separator
         _range
     ];
-    
+
     _unit addAction [
-        "<t color='#FFD700'>ALiVE: Interact (Dialog)</t>",  // Gold color to distinguish
+        "<t color='#FFD700'>ALiVE: Interact (Dialog)</t>",
         {
             params ["_target", "_caller"];
             [ALiVE_civInteractHandler, "openMenu", _target] call ALiVE_fnc_civInteract;
         },
         [],
-        5,  // Lower priority than AdvCiv quick actions
+        5,
         true,
         true,
         "",

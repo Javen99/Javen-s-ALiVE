@@ -1,16 +1,42 @@
+/* ----------------------------------------------------------------------------
+Function: ALIVE_fnc_advciv_ambientLife
+Description:
+    Drives time-of-day ambient behaviour for a single AdvCiv civilian unit.
+    Called each brain tick when the unit is in the CALM state and on foot.
+    Selects an appropriate action from a weighted pool based on the current
+    hour (morning, day, evening, night) and whether the unit is indoors,
+    then executes that action: walking, sitting, gathering with nearby
+    civilians, watching passing vehicles, going home, or sleeping.
+Parameters:
+    _this select 0: OBJECT - The civilian unit to process
+Returns:
+    Nil
+See Also:
+    ALIVE_fnc_advciv_brainTick, ALIVE_fnc_advciv_findHouse,
+    ALIVE_fnc_advciv_getSafePositions
+Author:
+    Jman (advanced civs)
+Peer Reviewed:
+    nil
+---------------------------------------------------------------------------- */
 
 params [["_unit", objNull, [objNull]]];
 
 if (isNull _unit || !alive _unit) exitWith {};
 if (isPlayer _unit) exitWith {};
-if (vehicle _unit != _unit) exitWith {};
+if (vehicle _unit != _unit) exitWith {};   // Skip units already in a vehicle
 
 private _lastAction = _unit getVariable ["ALiVE_advciv_lastAction", 0];
 private _homePos    = _unit getVariable ["ALiVE_advciv_homePos", getPos _unit];
 
+// Throttle: don't tick until the previous action's timer has expired
 if (time < _lastAction) exitWith {};
 
 
+// -----------------------------------------------------------------------
+// Determine whether the unit is currently inside a building by casting a
+// vertical ray upward. If a surface is found overhead the unit is indoors.
+// -----------------------------------------------------------------------
 private _isIndoors = false;
 private _currentBuilding = objNull;
 private _unitFloorZ = (getPosATL _unit) select 2;
@@ -35,6 +61,7 @@ private _unitFloorZ = (getPosATL _unit) select 2;
     };
 } forEach (nearestObjects [_unit, ["House","Building"], 15]);
 
+// Classify time of day into four bands used to weight action pools below
 private _hour      = daytime;
 private _isNight   = (_hour < 6 || _hour > 22);
 private _isMorning = (_hour >= 6  && _hour < 10);
@@ -42,13 +69,16 @@ private _isDay     = (_hour >= 10 && _hour < 18);
 private _isEvening = (_hour >= 18 && _hour <= 22);
 
 
+// -----------------------------------------------------------------------
+// Night: civilians sleep. If already indoors, stop in place; otherwise
+// find a nearby building and move directly to an interior position.
+// -----------------------------------------------------------------------
 if (_isNight) exitWith {
     if (_isIndoors) then {
         doStop _unit;
         _unit setVariable ["ALiVE_advciv_actionType", "SLEEPING", true];
         _unit setVariable ["ALiVE_advciv_lastAction", time + 120];
     } else {
-        // FIX #2: doMove сразу к внутренней позиции, без промежуточного шага
         private _houseData = [_unit] call ALiVE_fnc_advciv_findHouse;
         _houseData params [["_building", objNull], ["_positions", []]];
         if (!isNull _building && count _positions > 0) then {
@@ -60,10 +90,14 @@ if (_isNight) exitWith {
 };
 
 
+// -----------------------------------------------------------------------
+// Build a weighted action pool appropriate to the location and time of day.
+// Repetition within the array raises the probability of that action being
+// selected. Falls back to STAND if no time band matched (shouldn't happen).
+// -----------------------------------------------------------------------
 private _actions = [];
 
 if (_isIndoors) then {
-    // FIX #1: убран EXIT_BUILDING, долгие indoor таймеры
     if (_isMorning) then { _actions = ["STAND_INDOOR","STAND_INDOOR","SIT","WALK_INDOOR"]; };
     if (_isDay)     then { _actions = ["STAND_INDOOR","SIT","SIT","WALK_INDOOR","WALK_INDOOR"]; };
     if (_isEvening) then { _actions = ["STAND_INDOOR","SIT","STAND_INDOOR"]; };
@@ -80,12 +114,18 @@ _unit setVariable ["ALiVE_advciv_actionType", _action, true];
 
 switch (_action) do {
 
+    // Walk to a random position on the same floor of the current building.
+    // Falls back to all ground positions if same-floor detection returns nothing,
+    // and stops in place if no valid positions exist at all.
     case "WALK_INDOOR": {
         if (!isNull _currentBuilding) then {
+            // Request all positions with an unrestricted height cap, then filter
+            // to those on the same floor as the unit (within 2 m vertically).
             private _allSafe = [_currentBuilding, 999, _unit] call ALiVE_fnc_advciv_getSafePositions;
             private _sameFloor = _allSafe select {
                 abs ((_x select 2) - _unitFloorZ) < 2
             };
+            // Fallback: use getSafePositions with standard ground-floor cap
             if (count _sameFloor == 0) then {
                 _sameFloor = [_currentBuilding, 3.5, _unit] call ALiVE_fnc_advciv_getSafePositions;
             };
@@ -95,7 +135,7 @@ switch (_action) do {
                 _unit setSpeedMode "LIMITED";
                 _unit setBehaviour "CARELESS";
                 _unit doMove (selectRandom _sameFloor);
-                // FIX #1: длинный таймер внутри зданий
+                // Long timer: indoor movement is slow; retick too soon causes jitter
                 _unit setVariable ["ALiVE_advciv_lastAction", time + 40 + random 60];
             } else {
                 doStop _unit;
@@ -107,27 +147,32 @@ switch (_action) do {
         };
     };
 
+    // Stand idle indoors with an optional ambient talking animation
     case "STAND_INDOOR": {
         _unit setUnitPos "UP";
         _unit setSpeedMode "LIMITED";
         doStop _unit;
+        // Empty string in pool gives a chance of no animation (natural idle)
         private _anim = selectRandom ["Acts_CivilTalking_1", "Acts_StandingSpeakingRU", ""];
         if (_anim != "") then { [_unit, _anim] remoteExec ["playMove", 0]; };
         _unit setVariable ["ALiVE_advciv_lastAction", time + 40 + random 60];
     };
 
+    // Walk to a random road-snapped position within the home radius
     case "WALK": {
         _unit setUnitPos "UP";
         _unit setSpeedMode "LIMITED";
         _unit setBehaviour "CARELESS";
         private _radius = 20 + random (ALiVE_advciv_homeRadius * 0.6);
         private _target = _homePos getPos [_radius, random 360];
+        // Snap destination to nearest road piece to make movement look natural
         private _roads = _target nearRoads 30;
         if (count _roads > 0) then { _target = getPos (selectRandom _roads); };
         _unit doMove _target;
         _unit setVariable ["ALiVE_advciv_lastAction", time + 15];
     };
 
+    // Stand still outdoors, watching a random distant point with occasional animation
     case "STAND": {
         _unit setUnitPos "UP";
         _unit setSpeedMode "LIMITED";
@@ -138,6 +183,9 @@ switch (_action) do {
         _unit setVariable ["ALiVE_advciv_lastAction", time + 15];
     };
 
+    // Find a chair on the same floor and sit in it. Falls back to STAND if
+    // no chair is found. Uses CBA_fnc_waitUntilAndExecute to apply the
+    // sitting animation only once the unit has actually arrived at the chair.
     case "SIT": {
         private _chairTypes = [
             "Land_ChairPlastic_F","Land_ChairWood_F","Land_RattanChair_01_F",
@@ -147,6 +195,7 @@ switch (_action) do {
         ];
         private _chairs = nearestObjects [_unit, _chairTypes, 25];
 
+        // Restrict to chairs on the same floor to avoid units running upstairs
         _chairs = _chairs select {
             abs ((getPosATL _x select 2) - _unitFloorZ) < 2
         };
@@ -155,6 +204,8 @@ switch (_action) do {
             private _chair = _chairs select 0;
             _unit doMove (getPos _chair);
 
+            // Wait until close enough to the chair, then apply sit animation.
+            // Timeout prevents getting stuck waiting if the unit is redirected.
             [{
                 params ["_u", "_c"];
                 !alive _u || _u distance _c < 1.8 || time > (_this select 2)
@@ -170,14 +221,18 @@ switch (_action) do {
 
             _unit setVariable ["ALiVE_advciv_lastAction", time + 25];
         } else {
+            // No chair found — degrade to STAND so the unit still does something
             doStop _unit;
             _unit setVariable ["ALiVE_advciv_actionType", "STAND", true];
             _unit setVariable ["ALiVE_advciv_lastAction", time + 20];
         };
     };
 
+    // Walk toward a random nearby civilian and play a talking animation on arrival
     case "GATHER": {
         _unit setUnitPos "UP";
+        // Note: allUnits does not include createAgent crowd civilians, but that
+        // is acceptable here — GATHER is a bonus behaviour, not a critical one
         private _nearbyCiv = allUnits select {
             side _x == civilian && alive _x && !isPlayer _x && _x != _unit
             && _x distance _unit < 80 && {vehicle _x == _x}
@@ -187,6 +242,7 @@ switch (_action) do {
             private _target = selectRandom _nearbyCiv;
             _unit doMove ((getPos _target) getPos [2 + random 3, random 360]);
 
+            // Play talking animation after a short walk delay, only if still calm
             [{
                 params ["_unit"];
                 if (alive _unit && {_unit getVariable ["ALiVE_advciv_state", "CALM"] == "CALM"} && {vehicle _unit == _unit}) then {
@@ -199,6 +255,8 @@ switch (_action) do {
         _unit setVariable ["ALiVE_advciv_lastAction", time + 15];
     };
 
+    // Watch a nearby moving vehicle (curiosity behaviour). Short timer so the
+    // unit re-evaluates quickly in case the vehicle moves out of range.
     case "WATCH": {
         _unit setUnitPos "UP";
         private _vehicles = nearestObjects [_unit, ["LandVehicle", "Air"], ALiVE_advciv_curiosityRange];
@@ -211,6 +269,7 @@ switch (_action) do {
         };
     };
 
+    // Move to the exterior of a nearby building to simulate working/activity
     case "WORK": {
         _unit setUnitPos "UP";
         private _buildings = nearestObjects [_unit, ["House"], 50];
@@ -222,6 +281,7 @@ switch (_action) do {
         };
     };
 
+    // Walk directly home; used in the evening to gradually clear streets
     case "GOHOME": {
         _unit setUnitPos "UP";
         _unit doMove _homePos;
