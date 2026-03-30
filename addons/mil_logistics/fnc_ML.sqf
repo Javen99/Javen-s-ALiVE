@@ -4336,11 +4336,12 @@ switch(_operation) do {
                                         };
                                     };
 
-                                    [_logic, "spawnHelicopterFuelWatchdog", [
-                                        _profiles select 0 select 2 select 4,
-                                        _reinforcementPosition,
-                                        _eventFaction
-                                    ]] call MAINCLASS;
+                                    // NOTE: spawnHelicopterFuelWatchdog is intentionally NOT spawned
+                                    // for HELI_PARADROP helis. Paradrop helis operate at PARADROP_HEIGHT
+                                    // (500m) and are managed entirely by spawnHeliParadropWatchdog.
+                                    // The fuel watchdog is designed for HELI_INSERT hover-lock scenarios
+                                    // and incorrectly kills paradrop helis that slow momentarily during
+                                    // banking or terrain-following at low AGL after their drop.
 
                                 };
 
