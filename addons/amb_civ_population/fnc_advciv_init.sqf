@@ -25,6 +25,11 @@ Jman
 
 if (!isServer) exitWith {};
 
+// Exit early if AdvCiv is disabled or ALiVE Civilian Population module not placed
+if (isNil "ALiVE_advciv_enabled" || {!ALiVE_advciv_enabled}) exitWith {
+    ["ALiVE Advanced Civilians - Not enabled (no Civilian Population module or disabled in settings)"] call ALIVE_fnc_dump;
+};
+
 ["ALiVE Advanced Civilians - Initializing Realistic Civilians..."] call ALIVE_fnc_dump;
 
 ALiVE_advciv_voiceLines_panic = [
@@ -120,6 +125,11 @@ addMissionEventHandler ["EntityKilled", {
 } forEach (allUnits select {side _x == civilian && alive _x && !isPlayer _x});
 
 [] spawn {
+    // Safety check: exit if AdvCiv is not enabled or variable doesn't exist
+    if (isNil "ALiVE_advciv_enabled" || {!ALiVE_advciv_enabled}) exitWith {
+        ["ALiVE Advanced Civilians - Not enabled or no Civilian Population module placed"] call ALIVE_fnc_dump;
+    };
+    
     while {ALiVE_advciv_enabled} do {
         {
             if (alive _x && {side _x == civilian} && {!isPlayer _x} && {!(_x getVariable ["ALiVE_advciv_active", false])}) then {
