@@ -64,7 +64,7 @@ ARJay & Jman
 #define LZ_MAX_GRADIENT 15
 #define LZ_MAX_SEARCH_ATTEMPTS 8
 #define LZ_SEARCH_RADIUS_INCREMENT 25
-#define FUEL_WATCHDOG_STARTUP_DELAY 120
+#define FUEL_WATCHDOG_STARTUP_DELAY 300
 #define FUEL_WATCHDOG_CHECK_INTERVAL 10
 #define FUEL_WATCHDOG_LOW_FUEL_THRESHOLD 0.15
 #define FUEL_WATCHDOG_RECOVER_FUEL 0.5
@@ -986,16 +986,18 @@ switch(_operation) do {
 
                         // Sustained hover detection -- fires regardless of fuel.
                         // If the heli has been hovering (speed < threshold, AGL > minimum)
-                        // for 60+ seconds it is zombie-hovering with no more waypoints.
-                        // Force it to land at the fallback position so it despawns cleanly.
+                        // for 60+ seconds with no passengers and no slung load, it is
+                        // zombie-hovering with no more waypoints.
+                        // Guards:
+                        //   - isTouchingGround: heli is landing normally, don't interfere
+                        //   - cargoCount > 0: units aboard, delivery watchdog is handling it
+                        //   - hasSlung: slingload in progress, don't drop cargo at altitude
                         if (!_active) exitWith {};
                         if (
                             _heightAGL > FUEL_WATCHDOG_MIN_HOVER_HEIGHT &&
-                            abs _spd    < FUEL_WATCHDOG_HOVER_SPEED_THRESHOLD
+                            abs _spd    < FUEL_WATCHDOG_HOVER_SPEED_THRESHOLD &&
+                            !isTouchingGround _heli
                         ) then {
-                            // Only count hover ticks when no passengers AND no slung cargo.
-                            // A slingload heli hovering mid-delivery should not be force-landed
-                            // as the slung vehicle would be dropped at altitude.
                             private _cargoCount = { alive _x && _x != driver _heli && _x != gunner _heli } count crew _heli;
                             private _hasSlung = !isNull (vehicle _heli) && { count (attachedObjects _heli) > 0 };
                             if (_cargoCount == 0 && !_hasSlung) then {
@@ -1125,8 +1127,16 @@ switch(_operation) do {
                                 // Issue landAt immediately and retry every 30s
                                 // Use _landAtIssued as a 30s cooldown flag only - phaseTimer tracks total time in phase
                                 if (!_landAtIssued) then {
-                                    private _landPos = +_destPos;
+                                    // Place the landing pad at the heli's CURRENT position rather than
+                                    // the destination. Each heli is at a different position so concurrent
+                                    // deliveries to the same area get separate pads and don't collide.
+                                    private _landPos = getPosATL _heli;
                                     _landPos set [2, 0];
+                                    private _nearRoad = [getPos _heli] call ALIVE_fnc_getClosestRoad;
+                                    if (count _nearRoad > 0 && !surfaceIsWater _nearRoad && (_nearRoad distance2D _heli < 150)) then {
+                                        _landPos = _nearRoad;
+                                        _landPos set [2, 0];
+                                    };
                                     private _landPad = createVehicle ["Land_HelipadEmpty_F", _landPos, [], 0, "CAN_COLLIDE"];
                                     _heli landAt _landPad;
                                     _landAtIssued = true;
