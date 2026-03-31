@@ -1052,7 +1052,10 @@ switch(_operation) do {
                         _unit = _group createUnit [_x, _unitPosition, [], 0 , "FORM"];
 
                         // sadly still needed, even though "FORM" is used above :(
-                        _unit setpos (formationPosition _unit);
+                        // Guard against formationPosition returning [] when the group
+                        // formation has not fully registered yet (race condition on spawn).
+                        private _fPos = formationPosition _unit;
+                        if (count _fPos == 3) then { _unit setpos _fPos; };
                     };
 
                     _unit allowDamage false; // allow all units to spawn first so profile isn't corrupted
