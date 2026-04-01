@@ -3,13 +3,13 @@
 <Package name="ALiVE">
 <Container name="STR_DN">
 <Key ID="STR_ALIVE_CPC">
-    <English>Civilian Placement (Cust. Obj.)</English>
+    <English>Military Placement (Cust. Civ. Obj.)</English>
 </Key>
 <Key ID="STR_ALIVE_CPC_COMMENT">
-    <English>Custom Civilian Objective</English>
+    <English>Strategic Military Placement at Custom Civilian Objective</English>
 </Key>
 <Key ID="STR_ALIVE_CPC_USAGE">
-    <English>Place the Custom Civilian Objective module in the editor, set the objective radius and priority, then configure the civilian-placement force settings for that location.</English>
+    <English>Place the module in the editor, set the custom civilian objective radius and priority, then configure the military-placement force settings for that civilian objective.</English>
 </Key>
 <Key ID="STR_ALIVE_CPC_OBJECTIVE_SIZE">
     <English>Objective size:</English>
