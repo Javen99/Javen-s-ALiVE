@@ -1,0 +1,10 @@
+x\alive\addons\civ_placement_custom
+=======HEADER=======
+prefix=x\alive\addons\civ_placement_custom
+Mikero=DePbo.dll
+product=Arma 3
+version=1
+Pbo Type is: Arma Addon
+==================
+
+

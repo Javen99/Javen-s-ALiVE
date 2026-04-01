@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Project name="Arma3">
+<Package name="ALiVE">
+<Container name="STR_DN">
+<Key ID="STR_ALIVE_CPC">
+    <English>Civilian Placement (Cust. Obj.)</English>
+</Key>
+<Key ID="STR_ALIVE_CPC_COMMENT">
+    <English>Custom Civilian Objective</English>
+</Key>
+<Key ID="STR_ALIVE_CPC_USAGE">
+    <English>Place the Custom Civilian Objective module in the editor, set the objective radius and priority, then configure the civilian-placement force settings for that location.</English>
+</Key>
+<Key ID="STR_ALIVE_CPC_OBJECTIVE_SIZE">
+    <English>Objective size:</English>
+</Key>
+<Key ID="STR_ALIVE_CPC_OBJECTIVE_SIZE_COMMENT">
+    <English>Radius of the custom civilian objective used by OPCOM and local force placement.</English>
+</Key>
+<Key ID="STR_ALIVE_CPC_PRIORITY">
+    <English>Objective priority:</English>
+</Key>
+<Key ID="STR_ALIVE_CPC_PRIORITY_COMMENT">
+    <English>Priority of the custom civilian objective. Used by OPCOM target evaluation.</English>
+</Key>
+</Container></Package></Project>
+
+
