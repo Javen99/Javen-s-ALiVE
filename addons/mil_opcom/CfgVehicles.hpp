@@ -535,6 +535,18 @@ class CfgVehicles {
                                 typeName = "NUMBER";
                                 defaultValue = 10;
                         };
+                        class taskProfileCountOverrides
+                        {
+                                displayName = "$STR_ALIVE_OPCOM_TASK_PROFILE_COUNT_OVERRIDES";
+                                description = "$STR_ALIVE_OPCOM_TASK_PROFILE_COUNT_OVERRIDES_COMMENT";
+                                defaultValue = "";
+                        };
+                        class taskProfileTypeOverrides
+                        {
+                                displayName = "$STR_ALIVE_OPCOM_TASK_PROFILE_TYPE_OVERRIDES";
+                                description = "$STR_ALIVE_OPCOM_TASK_PROFILE_TYPE_OVERRIDES_COMMENT";
+                                defaultValue = "";
+                        };
                         class civicRecruitmentMultiplier
                         {
                                 displayName = "Civic Pressure Recruitment Multiplier";

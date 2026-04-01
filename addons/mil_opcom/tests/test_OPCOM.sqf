@@ -36,6 +36,64 @@ LOG("Testing OPCOM");
 
 TIMERSTART
 
+STAT("Testing task profile override parsing");
+
+private _overrideHandler = [] call ALIVE_fnc_hashCreate;
+private _countOverrides = [objNull, "parseTaskProfileCountOverrides", "[[""attack"",6],[""defend"",3],[""terrorize"",2],[""ambush"",1],[""reserve"",0]]"] call MAINCLASS;
+private _typeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[""attack"",[""mechanized"",""ARMORED""]],[""ambush"",[""infantry""]],[""terrorize"",[""motorized""]],[""reserve"",[]]]"] call MAINCLASS;
+private _malformedOverrideHandler = [] call ALIVE_fnc_hashCreate;
+private _malformedCountOverrides = [objNull, "parseTaskProfileCountOverrides", "[[123,2],[""attack"",5]]"] call MAINCLASS;
+private _malformedTypeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[123,[""air""]],[""attack"",[""mechanized""]]]"] call MAINCLASS;
+private _syntaxErrorOverrideHandler = [] call ALIVE_fnc_hashCreate;
+private _syntaxErrorCountOverrides = [objNull, "parseTaskProfileCountOverrides", "[[""attack"",6]"] call MAINCLASS;
+private _syntaxErrorTypeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[""attack"",[""mechanized""]]" ] call MAINCLASS;
+private _invalidTokenOverrideHandler = [] call ALIVE_fnc_hashCreate;
+private _invalidTokenTypeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[""attack"",[""mechnized""]],[""reserve"",[]]]"] call MAINCLASS;
+
+[_overrideHandler, "taskProfileCountOverrides", _countOverrides] call ALIVE_fnc_hashSet;
+[_overrideHandler, "taskProfileTypeOverrides", _typeOverrides] call ALIVE_fnc_hashSet;
+[_malformedOverrideHandler, "taskProfileCountOverrides", _malformedCountOverrides] call ALIVE_fnc_hashSet;
+[_malformedOverrideHandler, "taskProfileTypeOverrides", _malformedTypeOverrides] call ALIVE_fnc_hashSet;
+[_syntaxErrorOverrideHandler, "taskProfileCountOverrides", _syntaxErrorCountOverrides] call ALIVE_fnc_hashSet;
+[_syntaxErrorOverrideHandler, "taskProfileTypeOverrides", _syntaxErrorTypeOverrides] call ALIVE_fnc_hashSet;
+[_invalidTokenOverrideHandler, "taskProfileTypeOverrides", _invalidTokenTypeOverrides] call ALIVE_fnc_hashSet;
+
+_err = "Attack count override parse failed";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileCount", ["attack", 4]] call MAINCLASS) == 6, _err);
+
+_err = "Terrorize fallback count override failed";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileCount", ["factory", 1, "terrorize"]] call MAINCLASS) == 2, _err);
+
+_err = "Zero reserve override should be preserved";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileCount", ["reserve", 3]] call MAINCLASS) == 0, _err);
+
+_err = "Attack type override parse failed";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileTypes", ["attack", ["infantry"]]] call MAINCLASS) isEqualTo ["mechanized", "armored"], _err);
+
+_err = "Terrorize fallback type override failed";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileTypes", ["suicide", ["infantry"], "terrorize"]] call MAINCLASS) isEqualTo ["motorized"], _err);
+
+_err = "Empty reserve type override should be preserved";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileTypes", ["reserve", ["infantry"]]] call MAINCLASS) isEqualTo [], _err);
+
+_err = "Malformed count override entries should be ignored safely";
+ASSERT_TRUE(([_malformedOverrideHandler, "getTaskProfileCount", ["attack", 4]] call MAINCLASS) == 5, _err);
+
+_err = "Malformed type override entries should be ignored safely";
+ASSERT_TRUE(([_malformedOverrideHandler, "getTaskProfileTypes", ["attack", ["infantry"]]] call MAINCLASS) isEqualTo ["mechanized"], _err);
+
+_err = "Syntax errors in count overrides should fall back safely";
+ASSERT_TRUE(([_syntaxErrorOverrideHandler, "getTaskProfileCount", ["attack", 4]] call MAINCLASS) == 4, _err);
+
+_err = "Syntax errors in type overrides should fall back safely";
+ASSERT_TRUE(([_syntaxErrorOverrideHandler, "getTaskProfileTypes", ["attack", ["infantry"]]] call MAINCLASS) isEqualTo ["infantry"], _err);
+
+_err = "Invalid type tokens should not create empty overrides";
+ASSERT_TRUE(([_invalidTokenOverrideHandler, "getTaskProfileTypes", ["attack", ["infantry"]]] call MAINCLASS) isEqualTo ["infantry"], _err);
+
+_err = "Explicit empty type overrides should still be preserved";
+ASSERT_TRUE(([_invalidTokenOverrideHandler, "getTaskProfileTypes", ["reserve", ["infantry"]]] call MAINCLASS) isEqualTo [], _err);
+
 STAT("Creating Virtual AI System...");
 
 //Profile System

@@ -591,6 +591,9 @@ class FSM
                          "        };" \n
                          "    };" \n
                          "" \n
+                         "    _groupsize = [_OPCOM_HANDLER,""getTaskProfileCount"",[_type,_groupsize,_orders]] call ALiVE_fnc_OPCOM;" \n
+                         "    _types = [_OPCOM_HANDLER,""getTaskProfileTypes"",[_type,_types,_orders]] call ALiVE_fnc_OPCOM;" \n
+                         "" \n
                          "    // Store data" \n
                          "    _actions = " \n
                          "        [" \n
@@ -706,6 +709,9 @@ class FSM
                          "            _codeConditionFail = ""false"";" \n
                          "        };" \n
                          "    };" \n
+                         "" \n
+                         "    _groupsize = [_OPCOM_HANDLER,""getTaskProfileCount"",[_type,_groupsize,_orders]] call ALiVE_fnc_OPCOM;" \n
+                         "    _types = [_OPCOM_HANDLER,""getTaskProfileTypes"",[_type,_types,_orders]] call ALiVE_fnc_OPCOM;" \n
                          "" \n
                          "    // Store data" \n
                          "    _actions = " \n
@@ -939,6 +945,9 @@ class FSM
                          "        };" \n
                          "    };" \n
                          "" \n
+                         "    _groupsize = [_OPCOM_HANDLER,""getTaskProfileCount"",[_type,_groupsize,_orders]] call ALiVE_fnc_OPCOM;" \n
+                         "    _types = [_OPCOM_HANDLER,""getTaskProfileTypes"",[_type,_types,_orders]] call ALiVE_fnc_OPCOM;" \n
+                         "" \n
                          "    // Store data" \n
                          "    _actions = " \n
                          "        [" \n
@@ -1130,6 +1139,9 @@ class FSM
                          "            _codeConditionFail = ""false"";" \n
                          "        };" \n
                          "    };" \n
+                         "" \n
+                         "    _groupsize = [_OPCOM_HANDLER,""getTaskProfileCount"",[_type,_groupsize,_orders]] call ALiVE_fnc_OPCOM;" \n
+                         "    _types = [_OPCOM_HANDLER,""getTaskProfileTypes"",[_type,_types,_orders]] call ALiVE_fnc_OPCOM;" \n
                          "" \n
                          "    // Store data" \n
                          "    _actions = " \n

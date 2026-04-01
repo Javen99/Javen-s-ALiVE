@@ -148,6 +148,8 @@ switch(_operation) do {
                     _hostilityPresenceMultiplier = (_logic getvariable ["hostilityPresenceMultiplier",1]) max 0;
                     _hostilityInstallationMultiplier = (_logic getvariable ["hostilityInstallationMultiplier",1]) max 0;
                     _hostilityInstallationInterval = ((_logic getvariable ["hostilityInstallationInterval",10]) max 0) * 60;
+                    _taskProfileCountOverridesRaw = _logic getvariable ["taskProfileCountOverrides",""];
+                    _taskProfileTypeOverridesRaw = _logic getvariable ["taskProfileTypeOverrides",""];
                     _civicRecruitmentMultiplier = (_logic getvariable ["civicRecruitmentMultiplier",1]) max 0;
                     _civicInstallationMultiplier = (_logic getvariable ["civicInstallationMultiplier",1]) max 0;
                     private _civicRetaliationChanceRaw = (_logic getvariable ["civicRetaliationChance",0]) max 0;
@@ -200,6 +202,8 @@ switch(_operation) do {
 
                     //Create OPCOM #Hash#Datahandler
                     _handler = [nil, "createhashobject"] call ALIVE_fnc_OPCOM;
+                    _taskProfileCountOverrides = [_logic, "parseTaskProfileCountOverrides", _taskProfileCountOverridesRaw] call ALiVE_fnc_OPCOM;
+                    _taskProfileTypeOverrides = [_logic, "parseTaskProfileTypeOverrides", _taskProfileTypeOverridesRaw] call ALiVE_fnc_OPCOM;
 
                     //Set handler on module
                     _logic setVariable ["handler",_handler];
@@ -228,6 +232,8 @@ switch(_operation) do {
                     [_handler, "hostilityPresenceMultiplier",_hostilityPresenceMultiplier] call ALiVE_fnc_HashSet;
                     [_handler, "hostilityInstallationMultiplier",_hostilityInstallationMultiplier] call ALiVE_fnc_HashSet;
                     [_handler, "hostilityInstallationInterval",_hostilityInstallationInterval] call ALiVE_fnc_HashSet;
+                    [_handler, "taskProfileCountOverrides",_taskProfileCountOverrides] call ALiVE_fnc_HashSet;
+                    [_handler, "taskProfileTypeOverrides",_taskProfileTypeOverrides] call ALiVE_fnc_HashSet;
                     [_handler, "civicRecruitmentMultiplier",_civicRecruitmentMultiplier] call ALiVE_fnc_HashSet;
                     [_handler, "civicInstallationMultiplier",_civicInstallationMultiplier] call ALiVE_fnc_HashSet;
                     [_handler, "civicRetaliationChance",_civicRetaliationChance] call ALiVE_fnc_HashSet;
@@ -301,6 +307,14 @@ switch(_operation) do {
                                 [[_handler, "CQB",[]] call ALiVE_fnc_HashGet] call ALiVE_fnc_resetCQB;
                         };
                     };
+
+                    private _attackSectionCount = [_handler, "getTaskProfileCount", ["attack", [_handler, "sectionsamount_attack", 4] call ALiVE_fnc_HashGet]] call ALiVE_fnc_OPCOM;
+                    private _reserveSectionCount = [_handler, "getTaskProfileCount", ["reserve", [_handler, "sectionsamount_reserve", 1] call ALiVE_fnc_HashGet]] call ALiVE_fnc_OPCOM;
+                    private _defendSectionCount = [_handler, "getTaskProfileCount", ["defend", [_handler, "sectionsamount_defend", 2] call ALiVE_fnc_HashGet]] call ALiVE_fnc_OPCOM;
+
+                    [_handler, "sectionsamount_attack", _attackSectionCount] call ALiVE_fnc_HashSet;
+                    [_handler, "sectionsamount_reserve", _reserveSectionCount] call ALiVE_fnc_HashSet;
+                    [_handler, "sectionsamount_defend", _defendSectionCount] call ALiVE_fnc_HashSet;
 
                     /*
                     CONTROLLER  - coordination
@@ -1669,6 +1683,171 @@ switch(_operation) do {
                 };
                 _result = _args;
             };
+        };
+
+        case "parseTaskProfileCountOverrides": {
+            private _overrides = [] call ALIVE_fnc_hashCreate;
+
+            if (isNil "_args") exitWith {
+                _result = _overrides;
+            };
+
+            private _entries = _args;
+            if (_entries isEqualType "") then {
+                if (_entries == "") exitWith {
+                    _result = _overrides;
+                };
+
+                private _parseFailed = isNil {
+                    _entries = call compile _entries;
+                    false
+                };
+
+                if (_parseFailed) exitWith {
+                    _result = _overrides;
+                };
+            };
+
+            if !(_entries isEqualType []) exitWith {
+                _result = _overrides;
+            };
+
+            {
+                if (_x isEqualType [] && {count _x >= 2}) then {
+                    private _taskRaw = _x select 0;
+                    private _count = _x select 1;
+
+                    if (_taskRaw isEqualType "" && {_taskRaw != ""} && {_count isEqualType 0} && {_count >= 0}) then {
+                        private _task = toLower _taskRaw;
+                        [_overrides,_task,floor _count] call ALiVE_fnc_hashSet;
+                    };
+                };
+            } forEach _entries;
+
+            _result = _overrides;
+        };
+
+        case "parseTaskProfileTypeOverrides": {
+            private _overrides = [] call ALIVE_fnc_hashCreate;
+
+            if (isNil "_args") exitWith {
+                _result = _overrides;
+            };
+
+            private _entries = _args;
+            if (_entries isEqualType "") then {
+                if (_entries == "") exitWith {
+                    _result = _overrides;
+                };
+
+                private _parseFailed = isNil {
+                    _entries = call compile _entries;
+                    false
+                };
+
+                if (_parseFailed) exitWith {
+                    _result = _overrides;
+                };
+            };
+
+            if !(_entries isEqualType []) exitWith {
+                _result = _overrides;
+            };
+
+            {
+                if (_x isEqualType [] && {count _x >= 2}) then {
+                    private _taskRaw = _x select 0;
+                    private _rawTypes = _x select 1;
+                    private _types = [];
+
+                    if (_taskRaw isEqualType "" && {_taskRaw != ""} && {_rawTypes isEqualType []}) then {
+                        private _task = toLower _taskRaw;
+                        {
+                            if (_x isEqualType "") then {
+                                private _type = switch (toLower _x) do {
+                                    case "infantry": {"infantry"};
+                                    case "motorized": {"motorized"};
+                                    case "mechanized": {"mechanized"};
+                                    case "armored": {"armored"};
+                                    case "artillery": {"artillery"};
+                                    case "aaa": {"AAA"};
+                                    case "air": {"air"};
+                                    case "sea": {"sea"};
+                                    default {""};
+                                };
+
+                                if (_type != "") then {
+                                    _types pushBackUnique _type;
+                                };
+                            };
+                        } forEach _rawTypes;
+
+                        if (count _rawTypes == 0 || {count _types > 0}) then {
+                            [_overrides,_task,_types] call ALiVE_fnc_hashSet;
+                        };
+                    };
+                };
+            } forEach _entries;
+
+            _result = _overrides;
+        };
+
+        case "getTaskProfileCount": {
+            _args params [
+                ["_task","",[""]],
+                ["_default",0,[0]],
+                ["_fallbackTask","",[""]]
+            ];
+
+            _result = _default;
+
+            private _overrides = [_logic,"taskProfileCountOverrides",[]] call ALiVE_fnc_hashGet;
+            if !([_overrides] call ALIVE_fnc_isHash) exitWith {};
+
+            private _found = false;
+            {
+                if (!_found) then {
+                    private _taskKey = toLower _x;
+
+                    if (_taskKey != "") then {
+                        private _override = [_overrides,_taskKey,"__ALIVE_MISSING__"] call ALiVE_fnc_hashGet;
+
+                        if (_override isEqualType 0) then {
+                            _result = _override;
+                            _found = true;
+                        };
+                    };
+                };
+            } forEach [_task,_fallbackTask];
+        };
+
+        case "getTaskProfileTypes": {
+            _args params [
+                ["_task","",[""]],
+                ["_default",[],[[]]],
+                ["_fallbackTask","",[""]]
+            ];
+
+            _result = +_default;
+
+            private _overrides = [_logic,"taskProfileTypeOverrides",[]] call ALiVE_fnc_hashGet;
+            if !([_overrides] call ALIVE_fnc_isHash) exitWith {};
+
+            private _found = false;
+            {
+                if (!_found) then {
+                    private _taskKey = toLower _x;
+
+                    if (_taskKey != "") then {
+                        private _override = [_overrides,_taskKey,"__ALIVE_MISSING__"] call ALiVE_fnc_hashGet;
+
+                        if (_override isEqualType []) then {
+                            _result = +_override;
+                            _found = true;
+                        };
+                    };
+                };
+            } forEach [_task,_fallbackTask];
         };
 
         case "convertObject": {
