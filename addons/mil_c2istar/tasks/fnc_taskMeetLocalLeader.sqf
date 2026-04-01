@@ -98,8 +98,8 @@ switch (_taskState) do {
         [
             _leader,
             "Hold Shura",
-            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_talk_ca.paa",
-            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_talk_ca.paa",
+            "\a3\missions_f_oldman\data\img\holdactions\holdAction_talk_ca.paa",
+            "\a3\missions_f_oldman\data\img\holdactions\holdAction_talk_ca.paa",
             format ["_this distance2D _target < 3 && !(_target getVariable ['%1', false])", _completionVar],
             "_caller distance2D _target < 3",
             {},
