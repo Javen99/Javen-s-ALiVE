@@ -1782,7 +1782,9 @@ switch(_operation) do {
                             };
                         } forEach _rawTypes;
 
-                        [_overrides,_task,_types] call ALiVE_fnc_hashSet;
+                        if (count _rawTypes == 0 || {count _types > 0}) then {
+                            [_overrides,_task,_types] call ALiVE_fnc_hashSet;
+                        };
                     };
                 };
             } forEach _entries;
