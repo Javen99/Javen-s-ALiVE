@@ -283,7 +283,7 @@ switch(_operation) do {
 
                         _mod = (synchronizedObjects _logic) select _i;
 
-                        if ((typeof _mod) in ["ALiVE_mil_placement","ALiVE_civ_placement"]) then {
+                        if ((typeof _mod) in ["ALiVE_mil_placement","ALiVE_civ_placement","ALiVE_civ_placement_custom"]) then {
                             waituntil {_mod getVariable ["startupComplete", false]};
 
                             _obj = [_mod,"objectives",objNull,[]] call ALIVE_fnc_OOsimpleOperation;

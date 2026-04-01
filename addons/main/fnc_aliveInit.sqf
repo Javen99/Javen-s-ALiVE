@@ -165,6 +165,7 @@ if (isServer) then {
             QMOD(amb_civ_placement),
             QMOD(mil_placement),
             QMOD(civ_placement),
+            QMOD(civ_placement_custom),
             QMOD(mil_placement_custom),
             QMOD(mil_placement_spe),
             QMOD(mil_cqb),
