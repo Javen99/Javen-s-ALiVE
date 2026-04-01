@@ -1248,19 +1248,43 @@ switch(_operation) do {
                                         private _dominantFaction = [_center, _size] call ALiVE_fnc_getDominantFaction;
 
                                         if (isnil "_dominantFaction" || {!(([[_dominantFaction call ALiVE_fnc_factionSide] call ALiVE_fnc_SideObjectToNumber] call ALiVE_fnc_SideNumberToText) in _sidesEnemy)}) then {
-                                            private _availableTypes = ["ied"];
-                                            if (_roadblocks) then {_availableTypes pushBack "roadblocks"};
-                                            _availableTypes append ["HQ","depot","factory"];
+                                            private _buildingTypes = [];
+                                            private _roadTypes = [];
+                                            private _availableBuildings = [_center,_size] call ALiVE_fnc_INS_filterObjectiveBuildings;
+                                            private _availableRoads = _center nearRoads _size;
 
-                                            private _preferredType = selectRandom _availableTypes;
-                                            _created = [_logic,"createAsymmetricInstallation",[_preferredType,_center,_preferredType in ["HQ","depot","factory"],_objective]] call ALiVE_fnc_OPCOM;
+                                            if (count _availableBuildings > 0) then {
+                                                _buildingTypes = ["HQ","depot","factory"];
+                                            };
 
-                                            if (!_created) then {
-                                                {
-                                                    if (!_created && {_x != _preferredType}) then {
-                                                        _created = [_logic,"createAsymmetricInstallation",[_x,_center,_x in ["HQ","depot","factory"],_objective]] call ALiVE_fnc_OPCOM;
-                                                    };
-                                                } foreach _availableTypes;
+                                            if (count _availableRoads > 0) then {
+                                                _roadTypes = ["ied"];
+                                                if (_roadblocks) then {_roadTypes pushBack "roadblocks"};
+                                            };
+
+                                            private _preferredType = "";
+                                            private _fallbackTypes = [];
+
+                                            if (count _buildingTypes > 0) then {
+                                                _preferredType = selectRandom _buildingTypes;
+                                                _fallbackTypes = (_buildingTypes - [_preferredType]);
+                                            };
+
+                                            if (count _roadTypes > 0 && {(random 1) < 0.45 || count _buildingTypes == 0}) then {
+                                                _preferredType = selectRandom _roadTypes;
+                                                _fallbackTypes = (_roadTypes - [_preferredType]) + _buildingTypes;
+                                            };
+
+                                            if (_preferredType != "") then {
+                                                _created = [_logic,"createAsymmetricInstallation",[_preferredType,_center,_preferredType in ["HQ","depot","factory"],_objective]] call ALiVE_fnc_OPCOM;
+
+                                                if (!_created) then {
+                                                    {
+                                                        if (!_created) then {
+                                                            _created = [_logic,"createAsymmetricInstallation",[_x,_center,_x in ["HQ","depot","factory"],_objective]] call ALiVE_fnc_OPCOM;
+                                                        };
+                                                    } foreach _fallbackTypes;
+                                                };
                                             };
                                         };
                                     };
