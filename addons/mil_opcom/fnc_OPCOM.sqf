@@ -2011,8 +2011,39 @@ switch(_operation) do {
                     };
                 } else {
                     if (_installationType == "roadblocks") then {
-                        [_objective, "roadblocks", [[],"convertObject", _spawnPos nearestObject "building"] call ALiVE_fnc_OPCOM] call ALiVE_fnc_HashSet;
-                        _created = true;
+                        private _roadblockCap = ceil (_size / 200);
+                        private _existingRoadblockCount = if (isnil "ALiVE_CIV_PLACEMENT_ROADBLOCKS") then {
+                            0
+                        } else {
+                            {_spawnPos distance _x < _size} count ALiVE_CIV_PLACEMENT_ROADBLOCKS
+                        };
+
+                        if (_existingRoadblockCount < _roadblockCap) then {
+                            private _roadblockFaction = [_spawnPos, _size] call ALiVE_fnc_getDominantFaction;
+
+                            if !(isNil "_roadblockFaction") then {
+                                private _candidateRoads = _spawnPos nearRoads (_size + 20);
+                                _candidateRoads = _candidateRoads select {
+                                    _x distance _spawnPos >= (_size - 10) || {isOnRoad _x} || {(str _x) find "invisible" == -1}
+                                };
+
+                                private _existingRoadblocks = if (isnil "ALiVE_CIV_PLACEMENT_ROADBLOCKS") then {[]} else {ALiVE_CIV_PLACEMENT_ROADBLOCKS};
+                                private _viableRoadIndex = _candidateRoads findIf {
+                                    private _road = _x;
+
+                                    ({_road distance _x < 100} count _existingRoadblocks) == 0
+                                    && {isOnRoad _road}
+                                    && {count (roadsConnectedTo _road) > 0}
+                                    && {((nearestBuilding position _road) distance2D position _road) >= 20}
+                                    && {!(position _road isFlatEmpty [-1, -1, 0.3, 10, -1] isEqualTo [])}
+                                };
+
+                                if (_viableRoadIndex >= 0) then {
+                                    [_objective, "roadblocks", [[],"convertObject", _spawnPos nearestObject "building"] call ALiVE_fnc_OPCOM] call ALiVE_fnc_HashSet;
+                                    _created = true;
+                                };
+                            };
+                        };
                     };
                 };
             };
