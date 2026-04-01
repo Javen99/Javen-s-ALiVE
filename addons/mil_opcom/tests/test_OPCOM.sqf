@@ -36,6 +36,33 @@ LOG("Testing OPCOM");
 
 TIMERSTART
 
+STAT("Testing task profile override parsing");
+
+private _overrideHandler = [] call ALIVE_fnc_hashCreate;
+private _countOverrides = [objNull, "parseTaskProfileCountOverrides", "[[""attack"",6],[""defend"",3],[""terrorize"",2],[""ambush"",1],[""reserve"",0]]"] call MAINCLASS;
+private _typeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[""attack"",[""mechanized"",""ARMORED""]],[""ambush"",[""infantry""]],[""terrorize"",[""motorized""]],[""reserve"",[]]]"] call MAINCLASS;
+
+[_overrideHandler, "taskProfileCountOverrides", _countOverrides] call ALIVE_fnc_hashSet;
+[_overrideHandler, "taskProfileTypeOverrides", _typeOverrides] call ALIVE_fnc_hashSet;
+
+_err = "Attack count override parse failed";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileCount", ["attack", 4]] call MAINCLASS) == 6, _err);
+
+_err = "Terrorize fallback count override failed";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileCount", ["factory", 1, "terrorize"]] call MAINCLASS) == 2, _err);
+
+_err = "Zero reserve override should be preserved";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileCount", ["reserve", 3]] call MAINCLASS) == 0, _err);
+
+_err = "Attack type override parse failed";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileTypes", ["attack", ["infantry"]]] call MAINCLASS) isEqualTo ["mechanized", "armored"], _err);
+
+_err = "Terrorize fallback type override failed";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileTypes", ["suicide", ["infantry"], "terrorize"]] call MAINCLASS) isEqualTo ["motorized"], _err);
+
+_err = "Empty reserve type override should be preserved";
+ASSERT_TRUE(([_overrideHandler, "getTaskProfileTypes", ["reserve", ["infantry"]]] call MAINCLASS) isEqualTo [], _err);
+
 STAT("Creating Virtual AI System...");
 
 //Profile System

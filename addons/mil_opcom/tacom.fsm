@@ -121,6 +121,9 @@ class FSM
                          "_sectionsamount_attack = [_OPCOM_HANDLER,""sectionsamount_attack"",4] call ALiVE_fnc_HashGet;" \n
                          "_sectionsamount_reserve = [_OPCOM_HANDLER,""sectionsamount_reserve"",1] call ALiVE_fnc_HashGet;" \n
                          "_sectionsamount_defend = [_OPCOM_HANDLER,""sectionsamount_defend"",2] call ALiVE_fnc_HashGet;" \n
+                         "_attackSectionTypes = [_OPCOM_HANDLER,""getTaskProfileTypes"",[""attack"",[""infantry"",""motorized"",""mechanized"",""armored""]]] call ALiVE_fnc_OPCOM;" \n
+                         "_defendSectionTypes = [_OPCOM_HANDLER,""getTaskProfileTypes"",[""defend"",[""infantry"",""motorized"",""mechanized"",""armored""]]] call ALiVE_fnc_OPCOM;" \n
+                         "_reserveSectionTypes = [_OPCOM_HANDLER,""getTaskProfileTypes"",[""reserve"",[""infantry"",""motorized"",""mechanized"",""armored""]]] call ALiVE_fnc_OPCOM;" \n
                          "" \n
                          "_colorside = ""ColorRed"";" \n
                          "switch (_side) do {" \n
@@ -927,7 +930,7 @@ class FSM
                 {
                         name = "SELECT_SECTION";
                         itemno = 23;
-                        init = /*%FSM<STATEINIT""">*/"private [""_objective"",""_section"",""_size"",""_sectionAssist"",""_operation"",""_hdl""];" \n
+                        init = /*%FSM<STATEINIT""">*/"private [""_objective"",""_section"",""_size"",""_sectionAssist"",""_operation"",""_hdl"",""_taskTypes""];" \n
                          "" \n
                          "_TACOM_status = ""Select section"";" \n
                          "_timestamp = time;" \n
@@ -959,6 +962,12 @@ class FSM
                          "    _size = _custom select 1;" \n
                          "};" \n
                          "" \n
+                         "_taskTypes = switch (_operation) do {" \n
+                         "    case (""defend"") : {_defendSectionTypes};" \n
+                         "    case (""reserve"") : {_reserveSectionTypes};" \n
+                         "    default {_attackSectionTypes};" \n
+                         "};" \n
+                         "" \n
                          "_section = [_objective, ""section"",[]] call ALiVE_fnc_HashGet;" \n
                          "{" \n
                          "    private [""_profile""];" \n
@@ -971,14 +980,15 @@ class FSM
                          "" \n
                          "_section = [_objective, ""section"",[]] call ALiVE_fnc_HashGet;" \n
                          "if (count _section < _size) then {" \n
-                         "    _hdl = [_OPCOM_HANDLER,[_objective,_size]] spawn {" \n
-                         "        private [""_objective"",""_pos""];" \n
+                         "    _hdl = [_OPCOM_HANDLER,[_objective,_size,_taskTypes]] spawn {" \n
+                         "        private [""_objective"",""_pos"",""_taskTypes""];" \n
                          "" \n
                          "        _objective = _this select 1 select 0;" \n
                          "        _size = _this select 1 select 1;" \n
+                         "        _taskTypes = _this select 1 select 2;" \n
                          "        _pos = [_objective,""center""] call ALiVE_fnc_HashGet;" \n
                          "" \n
-                         "        _sectionAssist = [_this select 0,""NearestAvailableSection"",[_pos,_size,[""infantry"",""motorized"",""mechanized"",""armored""]]] call ALiVE_fnc_OPCOM;" \n
+                         "        _sectionAssist = [_this select 0,""NearestAvailableSection"",[_pos,_size,_taskTypes]] call ALiVE_fnc_OPCOM;" \n
                          "        [_objective, ""sectionAssist"",_sectionAssist] call ALiVE_fnc_HashSet;" \n
                          "    };" \n
                          "} else {" \n

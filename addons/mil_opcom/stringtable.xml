@@ -182,4 +182,20 @@
     <English>Minutes between periodic asymmetric hostility shifts from active insurgent installations. Lower values speed up hostility drift.</English>
     <Chinesesimp>Minutes between periodic asymmetric hostility shifts from active insurgent installations. Lower values speed up hostility drift.</Chinesesimp>
 </Key>
+<Key ID="STR_ALIVE_OPCOM_TASK_PROFILE_COUNT_OVERRIDES">
+    <English>Task profile count overrides:</English>
+    <Chinesesimp>Task profile count overrides:</Chinesesimp>
+</Key>
+<Key ID="STR_ALIVE_OPCOM_TASK_PROFILE_COUNT_OVERRIDES_COMMENT">
+    <English>Optional SQF array of [taskName,count] pairs for overriding how many profiles each task can use. Supports attack, defend and reserve for conventional OPCOMs, plus assault, ambush, retreat, terrorize, factory, sabotage, ied, suicide, depot, roadblocks and recruit for asymmetric actions. Recon and capture fall back to attack. Example: [["attack",6],["reserve",0],["ambush",1]].</English>
+    <Chinesesimp>Optional SQF array of [taskName,count] pairs for overriding how many profiles each task can use. Supports attack, defend and reserve for conventional OPCOMs, plus assault, ambush, retreat, terrorize, factory, sabotage, ied, suicide, depot, roadblocks and recruit for asymmetric actions. Recon and capture fall back to attack. Example: [["attack",6],["reserve",0],["ambush",1]].</Chinesesimp>
+</Key>
+<Key ID="STR_ALIVE_OPCOM_TASK_PROFILE_TYPE_OVERRIDES">
+    <English>Task profile type overrides:</English>
+    <Chinesesimp>Task profile type overrides:</Chinesesimp>
+</Key>
+<Key ID="STR_ALIVE_OPCOM_TASK_PROFILE_TYPE_OVERRIDES_COMMENT">
+    <English>Optional SQF array of [taskName,[types...]] pairs for overriding profile categories per task. Valid types are infantry, motorized, mechanized, armored, artillery, AAA, air and sea. Supports the same task names as the count override. Example: [["attack",["mechanized","armored"]],["ambush",["infantry"]]].</English>
+    <Chinesesimp>Optional SQF array of [taskName,[types...]] pairs for overriding profile categories per task. Valid types are infantry, motorized, mechanized, armored, artillery, AAA, air and sea. Supports the same task names as the count override. Example: [["attack",["mechanized","armored"]],["ambush",["infantry"]]].</Chinesesimp>
+</Key>
 </Container></Package></Project>
