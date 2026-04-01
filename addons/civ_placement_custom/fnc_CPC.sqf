@@ -236,18 +236,46 @@ switch (_operation) do {
             };
 
             if (_withPlacement) then {
-                if !(ALIVE_loadProfilesPersistent) then {
-                    [_logic, "placement"] call MAINCLASS;
-                } else {
-                    if (_debug) then { ["CPC - Profiles are persistent, no creation of profiles"] call ALiVE_fnc_dump; };
-                    _logic setVariable ["startupComplete", true];
-                };
-
                 if (isNil QGVAR(ROADBLOCK_LOCATIONS)) then {
                     GVAR(ROADBLOCK_LOCATIONS) = [];
                 };
 
-                if (parseNumber([_logic, "roadBlocks"] call MAINCLASS) > 0) then {
+                private _roadBlocks = parseNumber([_logic, "roadBlocks"] call MAINCLASS);
+
+                if !(ALIVE_loadProfilesPersistent) then {
+                    [_logic, "placement"] call MAINCLASS;
+                } else {
+                    if (_roadBlocks > 0) then {
+                        private _queuedRoadblocks = 0;
+                        private _restoredRoadblocks = 0;
+                        private _savedRoadblockLocations = if (isNil "ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS") then {[]} else {+ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS};
+
+                        {
+                            private _center = [_x, "center"] call ALIVE_fnc_hashGet;
+                            private _clusterSize = [_x, "size"] call ALIVE_fnc_hashGet;
+                            private _roadblockLocation = [_center, _clusterSize];
+                            private _wasSaved = (_savedRoadblockLocations findIf {_x isEqualTo _roadblockLocation}) >= 0;
+
+                            if ((_wasSaved || {random 100 < _roadBlocks}) && {(GVAR(ROADBLOCK_LOCATIONS) findIf {_x isEqualTo _roadblockLocation}) < 0}) then {
+                                GVAR(ROADBLOCK_LOCATIONS) pushBack _roadblockLocation;
+                                if (_wasSaved) then {
+                                    _restoredRoadblocks = _restoredRoadblocks + 1;
+                                } else {
+                                    _queuedRoadblocks = _queuedRoadblocks + 1;
+                                };
+                            };
+                        } forEach ([_logic, "objectives"] call MAINCLASS);
+
+                        if (_debug) then {
+                            ["CPC - Restored %1 and recomputed %2 deferred roadblock locations for persistent load", _restoredRoadblocks, _queuedRoadblocks] call ALiVE_fnc_dump;
+                        };
+                    };
+
+                    if (_debug) then { ["CPC - Profiles are persistent, no creation of profiles"] call ALiVE_fnc_dump; };
+                    _logic setVariable ["startupComplete", true];
+                };
+
+                if (_roadBlocks > 0) then {
                     [_logic] spawn {
                         params ["_logic"];
 
@@ -274,7 +302,11 @@ switch (_operation) do {
                                     if (_spawn) then {
                                         private _roadblockResult = [_position, _size + 150, ceil(_roadBlocks / 30), _debug] call ALiVE_fnc_createRoadblock;
                                         if (count _roadblockResult > 0) then {
+                                            private _roadblockLocation = [_position, _size];
                                             GVAR(ROADBLOCK_LOCATIONS) set [_forEachIndex, -1];
+                                            if !(isNil "ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS") then {
+                                                ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS = ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS select {!(_x isEqualTo _roadblockLocation)};
+                                            };
                                         };
                                     };
                                 };
@@ -602,7 +634,16 @@ switch (_operation) do {
                 };
 
                 if (!isNil "ALIVE_fnc_createRoadblock" && isNil QGVAR(COMPOSITIONS_LOADED) && {random 100 < _roadBlocks}) then {
-                    GVAR(ROADBLOCK_LOCATIONS) pushBack [_center, _clusterSize];
+                    private _roadblockLocation = [_center, _clusterSize];
+                    GVAR(ROADBLOCK_LOCATIONS) pushBack _roadblockLocation;
+
+                    if (isNil "ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS") then {
+                        ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS = [];
+                    };
+
+                    if ((ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS findIf {_x isEqualTo _roadblockLocation}) < 0) then {
+                        ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS pushBack _roadblockLocation;
+                    };
                 };
             } forEach _clusters;
 
