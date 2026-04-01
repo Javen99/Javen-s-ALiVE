@@ -54,6 +54,11 @@ if (_outcomeText isEqualTo "") then {
     _outcomeText = if (_supportValue < 0) then {"failure"} else {"success"};
 };
 
+private _outcomeText = toLower _outcome;
+if (_outcomeText isEqualTo "") then {
+    _outcomeText = if (_supportValue < 0) then {"failure"} else {"success"};
+};
+
 private _successStreak = [_supportState, "successStreak", 0] call ALIVE_fnc_hashGet;
 private _failureStreak = [_supportState, "failureStreak", 0] call ALIVE_fnc_hashGet;
 
