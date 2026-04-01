@@ -1707,10 +1707,11 @@ switch(_operation) do {
 
             {
                 if (_x isEqualType [] && {count _x >= 2}) then {
-                    private _task = toLower (_x select 0);
+                    private _taskRaw = _x select 0;
                     private _count = _x select 1;
 
-                    if (_task != "" && {_count isEqualType 0} && {_count >= 0}) then {
+                    if (_taskRaw isEqualType "" && {_taskRaw != ""} && {_count isEqualType 0} && {_count >= 0}) then {
+                        private _task = toLower _taskRaw;
                         [_overrides,_task,floor _count] call ALiVE_fnc_hashSet;
                     };
                 };
@@ -1741,11 +1742,12 @@ switch(_operation) do {
 
             {
                 if (_x isEqualType [] && {count _x >= 2}) then {
-                    private _task = toLower (_x select 0);
+                    private _taskRaw = _x select 0;
                     private _rawTypes = _x select 1;
                     private _types = [];
 
-                    if (_task != "" && {_rawTypes isEqualType []}) then {
+                    if (_taskRaw isEqualType "" && {_taskRaw != ""} && {_rawTypes isEqualType []}) then {
+                        private _task = toLower _taskRaw;
                         {
                             if (_x isEqualType "") then {
                                 private _type = switch (toLower _x) do {

@@ -41,9 +41,14 @@ STAT("Testing task profile override parsing");
 private _overrideHandler = [] call ALIVE_fnc_hashCreate;
 private _countOverrides = [objNull, "parseTaskProfileCountOverrides", "[[""attack"",6],[""defend"",3],[""terrorize"",2],[""ambush"",1],[""reserve"",0]]"] call MAINCLASS;
 private _typeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[""attack"",[""mechanized"",""ARMORED""]],[""ambush"",[""infantry""]],[""terrorize"",[""motorized""]],[""reserve"",[]]]"] call MAINCLASS;
+private _malformedOverrideHandler = [] call ALIVE_fnc_hashCreate;
+private _malformedCountOverrides = [objNull, "parseTaskProfileCountOverrides", "[[123,2],[""attack"",5]]"] call MAINCLASS;
+private _malformedTypeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[123,[""air""]],[""attack"",[""mechanized""]]]"] call MAINCLASS;
 
 [_overrideHandler, "taskProfileCountOverrides", _countOverrides] call ALIVE_fnc_hashSet;
 [_overrideHandler, "taskProfileTypeOverrides", _typeOverrides] call ALIVE_fnc_hashSet;
+[_malformedOverrideHandler, "taskProfileCountOverrides", _malformedCountOverrides] call ALIVE_fnc_hashSet;
+[_malformedOverrideHandler, "taskProfileTypeOverrides", _malformedTypeOverrides] call ALIVE_fnc_hashSet;
 
 _err = "Attack count override parse failed";
 ASSERT_TRUE(([_overrideHandler, "getTaskProfileCount", ["attack", 4]] call MAINCLASS) == 6, _err);
@@ -62,6 +67,12 @@ ASSERT_TRUE(([_overrideHandler, "getTaskProfileTypes", ["suicide", ["infantry"],
 
 _err = "Empty reserve type override should be preserved";
 ASSERT_TRUE(([_overrideHandler, "getTaskProfileTypes", ["reserve", ["infantry"]]] call MAINCLASS) isEqualTo [], _err);
+
+_err = "Malformed count override entries should be ignored safely";
+ASSERT_TRUE(([_malformedOverrideHandler, "getTaskProfileCount", ["attack", 4]] call MAINCLASS) == 5, _err);
+
+_err = "Malformed type override entries should be ignored safely";
+ASSERT_TRUE(([_malformedOverrideHandler, "getTaskProfileTypes", ["attack", ["infantry"]]] call MAINCLASS) isEqualTo ["mechanized"], _err);
 
 STAT("Creating Virtual AI System...");
 
