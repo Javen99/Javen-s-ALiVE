@@ -94,6 +94,37 @@ ASSERT_TRUE(([_invalidTokenOverrideHandler, "getTaskProfileTypes", ["attack", ["
 _err = "Explicit empty type overrides should still be preserved";
 ASSERT_TRUE(([_invalidTokenOverrideHandler, "getTaskProfileTypes", ["reserve", ["infantry"]]] call MAINCLASS) isEqualTo [], _err);
 
+STAT("Testing asymmetric installation override parsing");
+
+private _installationOverrides = [objNull, "parseAsymmetricInstallationCountOverrides", "[[""HQ"",2],[""depot"",0],[""roadblock"",1],[""factory"",3]]"] call MAINCLASS;
+private _aliasInstallationOverrides = [objNull, "parseAsymmetricInstallationCountOverrides", "[[""recruit"",1],[""ied_factory"",2]]"] call MAINCLASS;
+private _malformedInstallationOverrides = [objNull, "parseAsymmetricInstallationCountOverrides", "[[123,2],[""factory"",1]]"] call MAINCLASS;
+private _syntaxErrorInstallationOverrides = [objNull, "parseAsymmetricInstallationCountOverrides", "[[""factory"",2]"] call MAINCLASS;
+
+_err = "HQ installation override parse failed";
+ASSERT_TRUE(([_installationOverrides, "HQ", -1] call ALIVE_fnc_hashGet) == 2, _err);
+
+_err = "Roadblock alias should normalize to roadblocks";
+ASSERT_TRUE(([_installationOverrides, "roadblocks", -1] call ALIVE_fnc_hashGet) == 1, _err);
+
+_err = "Zero depot override should be preserved";
+ASSERT_TRUE(([_installationOverrides, "depot", -1] call ALIVE_fnc_hashGet) == 0, _err);
+
+_err = "Recruit alias should normalize to HQ";
+ASSERT_TRUE(([_aliasInstallationOverrides, "HQ", -1] call ALIVE_fnc_hashGet) == 1, _err);
+
+_err = "IED factory alias should normalize to factory";
+ASSERT_TRUE(([_aliasInstallationOverrides, "factory", -1] call ALIVE_fnc_hashGet) == 2, _err);
+
+_err = "Malformed installation override entries should be ignored safely";
+ASSERT_TRUE(([_malformedInstallationOverrides, "factory", -1] call ALIVE_fnc_hashGet) == 1, _err);
+
+_err = "Syntax errors in installation overrides should fall back safely";
+ASSERT_TRUE(count (_syntaxErrorInstallationOverrides select 1) == 0, _err);
+
+_err = "Unknown installation types should normalize to an empty string";
+ASSERT_TRUE(([objNull, "normalizeAsymmetricInstallationType", "unknown"] call MAINCLASS) == "", _err);
+
 STAT("Creating Virtual AI System...");
 
 //Profile System

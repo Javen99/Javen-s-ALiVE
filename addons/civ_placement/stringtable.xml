@@ -270,6 +270,12 @@
     <English>Set a custom count of SpecOps groups to be spawned, leave blank for no change, set to 0 for none</English>
     <Chinesesimp>设置一个自定义的特种部队数量生成,留空表示不更改,没有设置为0</Chinesesimp>
 </Key>
+<Key ID="STR_ALIVE_CP_ASYM_INSTALLATION_COUNT_OVERRIDES">
+    <English>Asym Installation Overrides:</English>
+</Key>
+<Key ID="STR_ALIVE_CP_ASYM_INSTALLATION_COUNT_OVERRIDES_COMMENT">
+    <English>Optional SQF array of [installation,count] pairs for asymmetric OPCOM startup on this module&apos;s objectives. Supported types: HQ, depot, factory, IED and roadblocks. Leave blank to keep default behavior. Example: [[&quot;HQ&quot;,1],[&quot;factory&quot;,2],[&quot;ied&quot;,3]].</English>
+</Key>
 <Key ID="STR_ALIVE_CP_FACTION">
     <English>Force Faction:</English>
     <Chinesesimp>武装力量阵营</Chinesesimp>

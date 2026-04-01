@@ -232,6 +232,11 @@ class CfgVehicles {
                 description = "$STR_ALIVE_CP_CUSTOM_SPECOPS_COUNT_COMMENT";
                 defaultValue = "";
             };
+            class asymmetricInstallationCountOverrides {
+                displayName = "$STR_ALIVE_CP_ASYM_INSTALLATION_COUNT_OVERRIDES";
+                description = "$STR_ALIVE_CP_ASYM_INSTALLATION_COUNT_OVERRIDES_COMMENT";
+                defaultValue = "";
+            };
             class guardProbability {
                 displayName = "$STR_ALIVE_CP_CUSTOM_GUARD_AMOUNT";
                 description = "$STR_ALIVE_CP_CUSTOM_GUARD_AMOUNT_COMMENT";

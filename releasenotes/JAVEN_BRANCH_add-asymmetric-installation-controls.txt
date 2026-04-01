@@ -1,0 +1,23 @@
+ALiVE Javen Fork
+Branch Notes - add-asymmetric-installation-controls
+
+Summary
+This branch adds mission-maker control over initial asymmetric OPCOM installations and exposes a manual runtime install API while preserving existing behavior when no overrides are configured.
+
+Changes
+- Added `asymmetricInstallationCountOverrides` to Civilian Placement and Custom Civilian Objective modules.
+- Added parser and normalization support for asymmetric installation count overrides, with safe fallback on malformed input.
+- Tagged asymmetric civilian objectives with module-scoped installation override metadata during OPCOM startup.
+- Reworked asymmetric startup seeding so module overrides place exact requested counts per synced civilian objective module and skip the default random seed for those objectives only.
+- Added `createAsymmetricInstallation` to `ALiVE_fnc_OPCOM` for manual creation of HQ, depot, factory, IED, and roadblock installations at a chosen target or nearest suitable building.
+- Added focused tests covering installation override parsing, aliases, zero-count preservation, malformed entries, and syntax-error fallback.
+
+Impact
+- Mission makers can force exact asymmetric startup installations on selected civilian objective modules without changing SQF logic.
+- Mission makers can script manual asymmetric installations with `[opcom, "createAsymmetricInstallation", [type, target, useClosestBuilding, objectiveRef]] call ALiVE_fnc_OPCOM;`.
+- Existing missions retain the current asymmetric startup behavior unless the new override field is populated.
+- Invalid override text falls back safely instead of breaking asymmetric objective setup.
+
+Examples
+- `asymmetricInstallationCountOverrides = [["HQ",1],["factory",2],["ied",3]]`
+- `[myOpcom, "createAsymmetricInstallation", ["factory", getPosATL someMarker, true]] call ALiVE_fnc_OPCOM`
