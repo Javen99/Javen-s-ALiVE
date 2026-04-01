@@ -69,7 +69,7 @@ switch (_operation) do {
         _result = _args;
     };
     case "state": {
-        private _simpleOperations = ["targets", "objectiveSize", "size", "type", "faction", "priority"];
+        private _simpleOperations = ["targets", "objectiveSize", "size", "type", "faction", "priority", "asymmetricInstallationCountOverrides"];
 
         if (typeName _args != "ARRAY") then {
             private _state = [] call CBA_fnc_hashCreate;
@@ -135,6 +135,9 @@ switch (_operation) do {
         _result = [_logic, _operation, _args, DEFAULT_NO_TEXT] call ALIVE_fnc_OOsimpleOperation;
     };
     case "customSpecOpsCount": {
+        _result = [_logic, _operation, _args, DEFAULT_NO_TEXT] call ALIVE_fnc_OOsimpleOperation;
+    };
+    case "asymmetricInstallationCountOverrides": {
         _result = [_logic, _operation, _args, DEFAULT_NO_TEXT] call ALIVE_fnc_OOsimpleOperation;
     };
     case "faction": {

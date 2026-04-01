@@ -95,7 +95,7 @@ switch(_operation) do {
     };
     case "state": {
         private["_state","_data","_nodes","_simple_operations"];
-        _simple_operations = ["targets", "size","type","faction"];
+        _simple_operations = ["targets", "size","type","faction","asymmetricInstallationCountOverrides"];
 
         if(typeName _args != "ARRAY") then {
             _state = [] call CBA_fnc_hashCreate;
@@ -159,6 +159,9 @@ switch(_operation) do {
         _result = [_logic,_operation,_args,DEFAULT_NO_TEXT] call ALIVE_fnc_OOsimpleOperation;
     };
     case "customSpecOpsCount": {
+        _result = [_logic,_operation,_args,DEFAULT_NO_TEXT] call ALIVE_fnc_OOsimpleOperation;
+    };
+    case "asymmetricInstallationCountOverrides": {
         _result = [_logic,_operation,_args,DEFAULT_NO_TEXT] call ALIVE_fnc_OOsimpleOperation;
     };
     // Determine force faction

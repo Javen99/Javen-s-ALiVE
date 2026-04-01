@@ -370,6 +370,20 @@ switch(_operation) do {
                                 while {_startupComplete = _mod getVariable ["startupComplete", false]; !(_startupComplete)} do {};
 
                                 _obj = [_mod,"objectives",objNull,[]] call ALIVE_fnc_OOsimpleOperation;
+
+                                if (_type == "asymmetric" && {(typeof _mod) in ["ALiVE_civ_placement","ALiVE_civ_placement_custom"]}) then {
+                                    private _asymmetricInstallationCountOverrides = [_handler, "parseAsymmetricInstallationCountOverrides", _mod getVariable ["asymmetricInstallationCountOverrides", ""]] call ALiVE_fnc_OPCOM;
+
+                                    if (count (_asymmetricInstallationCountOverrides select 1) > 0) then {
+                                        private _overrideSource = format["%1_%2", typeOf _mod, str _mod];
+
+                                        {
+                                            [_x, "asymmetricInstallationCountOverrides", _asymmetricInstallationCountOverrides] call ALiVE_fnc_HashSet;
+                                            [_x, "asymmetricInstallationOverrideSource", _overrideSource] call ALiVE_fnc_HashSet;
+                                        } foreach _obj;
+                                    };
+                                };
+
                                 _objectives = _objectives + _obj;
                             } else {
                                 //Is it a synced editor location-gamelogic?
@@ -1212,8 +1226,6 @@ switch(_operation) do {
 
                                 //["OPCOM Asymmetric Priority randomized with a variety of one fifth in relation to distance"] call ALiVE_fnc_dumpR;
 
-                                if (_asym_occupation <= 0) exitwith {};
-
                                 _factions = [_logic,"factions",["OPF_F"]] call ALiVE_fnc_HashGet;
                                 _sidesEnemy = [_logic,"sidesenemy",["WEST"]] call ALiVE_fnc_HashGet;
                                 _sidesFriendly = [_logic,"sidesfriendly",["EAST"]] call ALiVE_fnc_HashGet;
@@ -1223,91 +1235,60 @@ switch(_operation) do {
                                 //Convert CQB modules
                                 _CQB = +_CQB; {_CQB set [_foreachIndex,[[],"convertObject",_x] call ALiVE_fnc_OPCOM]} foreach _CQB;
 
-								{
-	                                    private ["_center","_size"];
+                                private _overrideObjectiveIDs = [_logic,"seedAsymmetricInstallations",_objectives] call ALiVE_fnc_OPCOM;
 
-	                                    _objective = _x;
+                                {
+                                    private _objective = _x;
+                                    private _objectiveID = [_objective,"objectiveID",""] call ALiVE_fnc_HashGet;
+                                    private _created = false;
 
-	                                    if (random 1 < _asym_occupation) then {
+                                    if (!(_objectiveID in _overrideObjectiveIDs) && {random 1 < _asym_occupation}) then {
+                                        private _center = [_objective,"center"] call ALiVE_fnc_HashGet;
+                                        private _size = [_objective,"size",-1] call ALiVE_fnc_HashGet;
+                                        private _dominantFaction = [_center, _size] call ALiVE_fnc_getDominantFaction;
 
-	                                        _center = [_objective,"center"] call ALiVE_fnc_HashGet;
-	                                        _size = [_objective,"size",-1] call ALiVE_fnc_HashGet;
-	                                        _id = [_objective,"objectiveID",""] call ALiVE_fnc_HashGet;
+                                        if (isnil "_dominantFaction" || {!(([[_dominantFaction call ALiVE_fnc_factionSide] call ALiVE_fnc_SideObjectToNumber] call ALiVE_fnc_SideNumberToText) in _sidesEnemy)}) then {
+                                            private _buildingTypes = [];
+                                            private _roadTypes = [];
+                                            private _availableBuildings = [_center,_size] call ALiVE_fnc_INS_filterObjectiveBuildings;
+                                            private _availableRoads = _center nearRoads _size;
 
-	                                        // Get sector data
-	                                        _sector = [ALIVE_sectorGrid, "positionToSector", _center] call ALIVE_fnc_sectorGrid;
-	                                        _sectorData = [_sector,"data",["",[],[],nil]] call ALIVE_fnc_hashGet;
-	                                        _entitiesBySide = [_sectorData, "entitiesBySide",["",[],[],nil]] call ALIVE_fnc_hashGet;
-	                                        _agents = [];
+                                            if (count _availableBuildings > 0) then {
+                                                _buildingTypes = ["HQ","depot","factory"];
+                                            };
 
-	                                        // Get amb civilian clusterdata
-	                                        if ("clustersCiv" in (_sectorData select 1)) then {
+                                            if (count _availableRoads > 0) then {
+                                                _roadTypes = ["ied"];
+                                                if (_roadblocks) then {_roadTypes pushBack "roadblocks"};
+                                            };
 
-	                                            if (isnil "ALIVE_agentHandler") exitwith {};
+                                            private _preferredType = "";
+                                            private _fallbackTypes = [];
 
-	                                            _civClusters = [_sectorData,"clustersCiv"] call ALIVE_fnc_hashGet;
-	                                            _settlementClusters = [_civClusters,"settlement",[]] call ALIVE_fnc_hashGet;
-	                                            _agentClusterData = [ALIVE_agentHandler,"agentsByCluster",["",[],[],nil]] call ALiVE_fnc_hashGet;
+                                            if (count _buildingTypes > 0) then {
+                                                _preferredType = selectRandom _buildingTypes;
+                                                _fallbackTypes = (_buildingTypes - [_preferredType]);
+                                            };
 
-	                                            if (count _settlementClusters <= 0) exitwith {};
+                                            if (count _roadTypes > 0 && {(random 1) < 0.45 || count _buildingTypes == 0}) then {
+                                                _preferredType = selectRandom _roadTypes;
+                                                _fallbackTypes = (_roadTypes - [_preferredType]) + _buildingTypes;
+                                            };
 
-	                                            _settlementClusters = [_settlementClusters,[_center],{_Input0 distance (_x select 0)},"ASCEND"] call ALiVE_fnc_SortBy;
-	                                            _agents =  ([_agentClusterData,_settlementClusters select 0 select 1,["",[],[],nil]] call ALiVE_fnc_HashGet) select 1;
+                                            if (_preferredType != "") then {
+                                                _created = [_logic,"createAsymmetricInstallation",[_preferredType,_center,_preferredType in ["HQ","depot","factory"],_objective]] call ALiVE_fnc_OPCOM;
 
-	                                            [_objective,"agents",_agents] call ALiVE_fnc_HashSet;
-	                                        };
-
-	                                        private ["_building","_road"];
-
-	                                        _buildings = [_center,_size] call ALiVE_fnc_INS_filterObjectiveBuildings;
-	                                        _roads = _center nearRoads _size;
-	                                        _faction = selectRandom _factions;
-	                                        _dominantFaction = [_center, _size] call ALiVE_fnc_getDominantFaction;
-
-	                                        if (isnil "_dominantFaction" || {!(([[_dominantFaction call ALiVE_fnc_factionSide] call ALiVE_fnc_SideObjectToNumber] call ALiVE_fnc_SideNumberToText) in _sidesEnemy)}) then {
-	                                            if (count (_buildings + _roads) > 0) then {
-
-	                                                if (count _buildings > 0) then {
-	                                                    _type = selectRandom ["HQ","depot","factory"];
-	                                                    _target = selectRandom _buildings;
-	                                                };
-
-	                                                if (count _roads > 0 && {(random 1) < 0.45 || count _buildings == 0}) then {
-	                                                        _type = selectRandom ["ied","roadblocks"];
-	                                                        if !(_roadblocks) then {
-	                                                            _type = "ied";
-	                                                        };
-	                                                        _target = selectRandom _roads;
-	                                                };
-
-	                                                _target = [[],"convertObject",_target] call ALiVE_fnc_OPCOM;
-
-	                                                switch _type do {
-	                                                    case ("factory") : {
-	                                                        [time,_center,_id,_size,_faction,_target,_sidesEnemy,_agents,+_CQB] spawn ALiVE_fnc_INS_factory;
-	                                                    };
-	                                                    case ("depot") : {
-	                                                        [time,_center,_id,_size,_faction,_target,_sidesEnemy,_agents,+_CQB] spawn ALiVE_fnc_INS_depot;
-	                                                    };
-	                                                    case ("HQ") : {
-	                                                        [time,_center,_id,_size,_faction,_target,_sidesEnemy,_agents,+_CQB] spawn ALiVE_fnc_INS_recruit;
-	                                                    };
-	                                                    case ("ied") : {
-	                                                        [time,_center,_id,_size,_faction,_target,_sidesEnemy,_agents] spawn ALiVE_fnc_INS_ied;
-	                                                    };
-	                                                    /*
-	                                                    case ("ambush") : {
-	                                                        [time,_center,_id,_size,_faction,_target,_sidesEnemy,_agents] spawn ALiVE_fnc_INS_ambush;
-	                                                    };
-	                                                    */
-	                                                    case ("roadblocks") : {
-	                                                        [time,_center,_id,_size,_faction,_target,_sidesEnemy,_agents,+_CQB] spawn ALiVE_fnc_INS_roadblocks;
-	                                                    };
-	                                                };
-	                                             };
-	                                         };
-	                                     };
-	                                } foreach _objectives;
+                                                if (!_created) then {
+                                                    {
+                                                        if (!_created) then {
+                                                            _created = [_logic,"createAsymmetricInstallation",[_x,_center,_x in ["HQ","depot","factory"],_objective]] call ALiVE_fnc_OPCOM;
+                                                        };
+                                                    } foreach _fallbackTypes;
+                                                };
+                                            };
+                                        };
+                                    };
+                                } foreach _objectives;
                             };
 
                             case ("size") : {};
@@ -1790,6 +1771,368 @@ switch(_operation) do {
             } forEach _entries;
 
             _result = _overrides;
+        };
+
+        case "normalizeAsymmetricInstallationType": {
+            if (isNil "_args" || {!(_args isEqualType "")}) exitWith {
+                _result = "";
+            };
+
+            _result = switch (toLower _args) do {
+                case "hq";
+                case "recruit";
+                case "recruitmenthq";
+                case "recruitment_hq": {"HQ"};
+                case "depot": {"depot"};
+                case "factory";
+                case "iedfactory";
+                case "ied_factory": {"factory"};
+                case "ied": {"ied"};
+                case "roadblock";
+                case "roadblocks": {"roadblocks"};
+                default {""};
+            };
+        };
+
+        case "parseAsymmetricInstallationCountOverrides": {
+            private _overrides = [] call ALIVE_fnc_hashCreate;
+
+            if (isNil "_args") exitWith {
+                _result = _overrides;
+            };
+
+            private _entries = _args;
+            if (_entries isEqualType "") then {
+                if (_entries == "") exitWith {
+                    _result = _overrides;
+                };
+
+                private _parseFailed = isNil {
+                    _entries = call compile _entries;
+                    false
+                };
+
+                if (_parseFailed) exitWith {
+                    _result = _overrides;
+                };
+            };
+
+            if !(_entries isEqualType []) exitWith {
+                _result = _overrides;
+            };
+
+            {
+                if (_x isEqualType [] && {count _x >= 2}) then {
+                    private _rawType = _x select 0;
+                    private _count = _x select 1;
+
+                    if (_rawType isEqualType "" && {_rawType != ""} && {_count isEqualType 0} && {_count >= 0}) then {
+                        private _type = [_logic, "normalizeAsymmetricInstallationType", _rawType] call ALiVE_fnc_OPCOM;
+
+                        if (_type != "") then {
+                            [_overrides, _type, floor _count] call ALiVE_fnc_hashSet;
+                        };
+                    };
+                };
+            } forEach _entries;
+
+            _result = _overrides;
+        };
+
+        case "createAsymmetricInstallation": {
+            if !(isServer) exitWith {
+                _result = false;
+            };
+
+            _args params [
+                ["_type", "", [""]],
+                ["_target", [0,0,0], [[], objNull]],
+                ["_useClosestBuilding", false, [true]],
+                ["_objectiveRef", objNull, [objNull, [], "", []]]
+            ];
+
+            private _installationType = [_logic, "normalizeAsymmetricInstallationType", _type] call ALiVE_fnc_OPCOM;
+            if (_installationType == "") exitWith {
+                _result = false;
+            };
+
+            if (([_logic, "controltype", ""] call ALiVE_fnc_HashGet) != "asymmetric") exitWith {
+                _result = false;
+            };
+
+            private _anchorPos = [];
+            if (_target isEqualType objNull) then {
+                if (!isNull _target) then {
+                    _anchorPos = getPosATL _target;
+                };
+            } else {
+                if (_target isEqualType [] && {count _target >= 2}) then {
+                    _anchorPos = +_target;
+                };
+            };
+
+            if (_anchorPos isEqualTo []) exitWith {
+                _result = false;
+            };
+
+            private _objectiveSearchPos = +_anchorPos;
+            private _objective = [];
+
+            if !isNil "_objectiveRef" then {
+                if ([_objectiveRef] call ALIVE_fnc_isHash) then {
+                    _objective = _objectiveRef;
+                } else {
+                    if (_objectiveRef isEqualType "" && {_objectiveRef != ""}) then {
+                        _objective = [_logic, "getobjectivebyid", _objectiveRef] call ALiVE_fnc_OPCOM;
+                    } else {
+                        if (_objectiveRef isEqualType [] && {count _objectiveRef >= 2}) then {
+                            _objectiveSearchPos = +_objectiveRef;
+                        };
+                    };
+                };
+            };
+
+            if !([_objective] call ALIVE_fnc_isHash) then {
+                private _nearestDistance = -1;
+
+                {
+                    private _candidateCenter = [_x, "center", []] call ALiVE_fnc_HashGet;
+
+                    if !(_candidateCenter isEqualTo []) then {
+                        private _distance = _objectiveSearchPos distance2D _candidateCenter;
+                        if (_nearestDistance < 0 || {_distance < _nearestDistance}) then {
+                            _nearestDistance = _distance;
+                            _objective = _x;
+                        };
+                    };
+                } foreach ([_logic, "objectives", []] call ALiVE_fnc_HashGet);
+            };
+
+            if !([_objective] call ALIVE_fnc_isHash) exitWith {
+                _result = false;
+            };
+
+            private _objectiveID = [_objective, "objectiveID", ""] call ALiVE_fnc_HashGet;
+            private _center = [_objective, "center", []] call ALiVE_fnc_HashGet;
+            private _size = [_objective, "size", 0] call ALiVE_fnc_HashGet;
+            if (_objectiveID == "" || {_center isEqualTo []}) exitWith {
+                _result = false;
+            };
+
+            private _existing = [_logic, "convertObject", [_objective, _installationType, []] call ALiVE_fnc_HashGet] call ALiVE_fnc_OPCOM;
+            if (alive _existing) exitWith {
+                _result = false;
+            };
+
+            private _factions = [_logic, "factions", ["OPF_F"]] call ALiVE_fnc_HashGet;
+            if (count _factions == 0) then {
+                _factions = ["OPF_F"];
+            };
+
+            private _sidesEnemy = [_logic, "sidesenemy", ["WEST"]] call ALiVE_fnc_HashGet;
+            private _CQB = [_logic, "CQB", []] call ALiVE_fnc_HashGet;
+            _CQB = +_CQB;
+            {
+                _CQB set [_foreachIndex, [[],"convertObject", _x] call ALiVE_fnc_OPCOM];
+            } foreach _CQB;
+
+            private _agents = [_objective, "agents", []] call ALiVE_fnc_HashGet;
+            if (_agents isEqualTo [] && {!isNil "ALIVE_sectorGrid"} && {!isNil "ALIVE_agentHandler"}) then {
+                private _sector = [ALIVE_sectorGrid, "positionToSector", _center] call ALIVE_fnc_sectorGrid;
+                private _sectorData = [_sector, "data", ["", [], [], nil]] call ALIVE_fnc_hashGet;
+
+                if ("clustersCiv" in (_sectorData select 1)) then {
+                    private _civClusters = [_sectorData, "clustersCiv"] call ALIVE_fnc_hashGet;
+                    private _settlementClusters = [_civClusters, "settlement", []] call ALIVE_fnc_hashGet;
+                    private _agentClusterData = [ALIVE_agentHandler, "agentsByCluster", ["", [], [], nil]] call ALiVE_fnc_hashGet;
+
+                    if (count _settlementClusters > 0) then {
+                        _settlementClusters = [_settlementClusters, [_center], {_Input0 distance (_x select 0)}, "ASCEND"] call ALiVE_fnc_SortBy;
+                        _agents = ([_agentClusterData, _settlementClusters select 0 select 1, ["", [], [], nil]] call ALiVE_fnc_HashGet) select 1;
+                        [_objective, "agents", _agents] call ALiVE_fnc_HashSet;
+                    };
+                };
+            };
+
+            private _spawnPos = +_anchorPos;
+            private _selectedTarget = objNull;
+            private _created = false;
+
+            if (_installationType in ["HQ", "factory", "depot"]) then {
+                private _buildings = [_center, _size] call ALiVE_fnc_INS_filterObjectiveBuildings;
+                private _usedBuildings = [];
+
+                {
+                    private _occupied = [_logic, "convertObject", [_objective, _x, []] call ALiVE_fnc_HashGet] call ALiVE_fnc_OPCOM;
+                    if (alive _occupied) then {
+                        _usedBuildings pushBackUnique _occupied;
+                    };
+                } foreach ["factory", "HQ", "depot"];
+
+                private _candidateBuildings = [];
+                {
+                    if !(_x in _usedBuildings) then {
+                        _candidateBuildings pushBack _x;
+                    };
+                } foreach _buildings;
+                if (count _candidateBuildings == 0) then {
+                    _candidateBuildings = _buildings;
+                };
+
+                if (_target isEqualType objNull && {!isNull _target} && {alive _target} && {_target in _candidateBuildings}) then {
+                    _selectedTarget = _target;
+                };
+
+                if (isNull _selectedTarget) then {
+                    private _sortedBuildings = [_candidateBuildings, [_anchorPos], {_Input0 distance2D _x}, "ASCEND"] call ALiVE_fnc_SortBy;
+                    if (count _sortedBuildings > 0) then {
+                        if (_useClosestBuilding || {(_anchorPos distance2D (_sortedBuildings select 0)) <= 15}) then {
+                            _selectedTarget = _sortedBuildings select 0;
+                        };
+                    };
+                };
+
+                if (alive _selectedTarget) then {
+                    _spawnPos = getPosATL _selectedTarget;
+                    [_objective, _installationType, [[],"convertObject", _selectedTarget] call ALiVE_fnc_OPCOM] call ALiVE_fnc_HashSet;
+                    _created = true;
+                };
+            } else {
+                if (_installationType == "ied") then {
+                    if !(isnil "ALiVE_MIL_IED") then {
+                        private _placeholders = ((nearestobjects [_spawnPos, ["Static"], 150]) + (_spawnPos nearRoads 150));
+                        if (count _placeholders > 0) then {
+                            _selectedTarget = _placeholders select 0;
+                        } else {
+                            _selectedTarget = _spawnPos nearestObject "building";
+                        };
+                        [_objective, "ied", [[],"convertObject", _selectedTarget] call ALiVE_fnc_OPCOM] call ALiVE_fnc_HashSet;
+                        _created = true;
+                    };
+                } else {
+                    if (_installationType == "roadblocks") then {
+                        private _roadblockCap = ceil (_size / 200);
+                        private _existingRoadblockCount = if (isnil "ALiVE_CIV_PLACEMENT_ROADBLOCKS") then {
+                            0
+                        } else {
+                            {_spawnPos distance _x < _size} count ALiVE_CIV_PLACEMENT_ROADBLOCKS
+                        };
+
+                        if (_existingRoadblockCount < _roadblockCap) then {
+                            private _roadblockFaction = [_spawnPos, _size] call ALiVE_fnc_getDominantFaction;
+
+                            if !(isNil "_roadblockFaction") then {
+                                private _candidateRoads = _spawnPos nearRoads (_size + 20);
+                                _candidateRoads = _candidateRoads select {
+                                    _x distance _spawnPos >= (_size - 10) || {isOnRoad _x} || {(str _x) find "invisible" == -1}
+                                };
+
+                                private _existingRoadblocks = if (isnil "ALiVE_CIV_PLACEMENT_ROADBLOCKS") then {[]} else {ALiVE_CIV_PLACEMENT_ROADBLOCKS};
+                                private _viableRoadIndex = _candidateRoads findIf {
+                                    private _road = _x;
+
+                                    ({_road distance _x < 100} count _existingRoadblocks) == 0
+                                    && {isOnRoad _road}
+                                    && {count (roadsConnectedTo _road) > 0}
+                                    && {((nearestBuilding position _road) distance2D position _road) >= 20}
+                                    && {!(position _road isFlatEmpty [-1, -1, 0.3, 10, -1] isEqualTo [])}
+                                };
+
+                                if (_viableRoadIndex >= 0) then {
+                                    [_objective, "roadblocks", [[],"convertObject", _spawnPos nearestObject "building"] call ALiVE_fnc_OPCOM] call ALiVE_fnc_HashSet;
+                                    _created = true;
+                                };
+                            };
+                        };
+                    };
+                };
+            };
+
+            if !_created exitWith {
+                _result = false;
+            };
+
+            private _faction = selectRandom _factions;
+            switch (_installationType) do {
+                case "factory": {
+                    [time, _center, _objectiveID, _size, _faction, _selectedTarget, _sidesEnemy, _agents, +_CQB] spawn ALiVE_fnc_INS_factory;
+                };
+                case "depot": {
+                    [time, _center, _objectiveID, _size, _faction, _selectedTarget, _sidesEnemy, _agents, +_CQB] spawn ALiVE_fnc_INS_depot;
+                };
+                case "HQ": {
+                    [time, _center, _objectiveID, _size, _faction, _selectedTarget, _sidesEnemy, _agents, +_CQB] spawn ALiVE_fnc_INS_recruit;
+                };
+                case "ied": {
+                    [time, _spawnPos, _objectiveID, _size, _faction, _selectedTarget, _sidesEnemy, _agents] spawn ALiVE_fnc_INS_ied;
+                };
+                case "roadblocks": {
+                    [time, _spawnPos, _objectiveID, _size, _faction, objNull, _sidesEnemy, _agents, +_CQB] spawn ALiVE_fnc_INS_roadblocks;
+                };
+            };
+
+            _result = true;
+        };
+
+        case "seedAsymmetricInstallations": {
+            if (isNil "_args") then {
+                _args = [_logic, "objectives", []] call ALiVE_fnc_HashGet;
+            };
+
+            private _objectives = _args;
+            private _debug = [_logic, "debug", false] call ALiVE_fnc_HashGet;
+            private _handledObjectiveIDs = [];
+            private _processedSources = [];
+
+            {
+                private _objective = _x;
+                private _sourceKey = [_objective, "asymmetricInstallationOverrideSource", ""] call ALiVE_fnc_HashGet;
+                private _overrides = [_objective, "asymmetricInstallationCountOverrides", []] call ALiVE_fnc_HashGet;
+
+                if (_sourceKey != "" && {[_overrides] call ALIVE_fnc_isHash} && {count (_overrides select 1) > 0} && {!(_sourceKey in _processedSources)}) then {
+                    _processedSources pushBack _sourceKey;
+
+                    private _groupObjectives = [];
+                    {
+                        if (([_x, "asymmetricInstallationOverrideSource", ""] call ALiVE_fnc_HashGet) == _sourceKey) then {
+                            _groupObjectives pushBack _x;
+                            private _groupObjectiveID = [_x, "objectiveID", ""] call ALiVE_fnc_HashGet;
+                            if (_groupObjectiveID != "") then {
+                                _handledObjectiveIDs pushBackUnique _groupObjectiveID;
+                            };
+                        };
+                    } foreach _objectives;
+
+                    {
+                        private _installationType = _x;
+                        private _requestedCount = [_overrides, _installationType, 0] call ALiVE_fnc_HashGet;
+                        private _createdCount = 0;
+                        private _usedObjectiveIDs = [];
+
+                        if (_requestedCount > 0) then {
+                            {
+                                private _objectiveCandidate = _x;
+                                private _candidateObjectiveID = [_objectiveCandidate, "objectiveID", ""] call ALiVE_fnc_HashGet;
+
+                                if (_createdCount < _requestedCount && {!(_candidateObjectiveID in _usedObjectiveIDs)}) then {
+                                    private _createdInstallation = [_logic, "createAsymmetricInstallation", [_installationType, [_objectiveCandidate, "center", []] call ALiVE_fnc_HashGet, _installationType in ["HQ", "depot", "factory"], _objectiveCandidate]] call ALiVE_fnc_OPCOM;
+
+                                    if (_createdInstallation) then {
+                                        _createdCount = _createdCount + 1;
+                                        _usedObjectiveIDs pushBack _candidateObjectiveID;
+                                    };
+                                };
+                            } foreach _groupObjectives;
+                        };
+
+                        if (_debug && {_requestedCount > _createdCount}) then {
+                            ["OPCOM asymmetric installation overrides requested %1 %2 installations but only placed %3.", _requestedCount, _installationType, _createdCount] call ALiVE_fnc_dump;
+                        };
+                    } foreach ["HQ", "factory", "depot", "ied", "roadblocks"];
+                };
+            } foreach _objectives;
+
+            _result = _handledObjectiveIDs;
         };
 
         case "getTaskProfileCount": {
@@ -2328,7 +2671,7 @@ switch(_operation) do {
 
                     _objectives_unsorted = [];
                     {
-                        private ["_target","_pos","_size","_type","_priority","_clusterID","_height"];
+                        private ["_target","_pos","_size","_type","_priority","_clusterID","_height","_asymmetricInstallationCountOverrides","_asymmetricInstallationOverrideSource"];
                                 _target = _x;
                                 _pos = [_target,"center"] call ALiVE_fnc_hashGet;
                                 _size = [_target,"size"] call ALiVE_fnc_hashGet;
@@ -2336,14 +2679,16 @@ switch(_operation) do {
                                 _priority = [_target,"priority"] call ALiVE_fnc_hashGet;
                                 _clusterID = [_target,"clusterID"] call ALiVE_fnc_hashGet;
                                 _height = (ATLtoASL [_pos select 0, _pos select 1,0]) select 2;
+                                _asymmetricInstallationCountOverrides = [_target,"asymmetricInstallationCountOverrides",[]] call ALiVE_fnc_HashGet;
+                                _asymmetricInstallationOverrideSource = [_target,"asymmetricInstallationOverrideSource",""] call ALiVE_fnc_HashGet;
 
-                                _objectives_unsorted pushback [_pos,_size,_type,_priority,_height,_clusterID,_opcomID];
+                                _objectives_unsorted pushback [_pos,_size,_type,_priority,_height,_clusterID,_opcomID,_asymmetricInstallationCountOverrides,_asymmetricInstallationOverrideSource];
                     } foreach _objectives;
 
                     //Create objectives for OPCOM and set it on the OPCOM Handler
                     //GetObjectivesByPriority
                     {
-                        private ["_target","_id","_pos","_size","_type","_priority","_clusterID","_opcom_state"];
+                        private ["_target","_id","_pos","_size","_type","_priority","_clusterID","_opcom_state","_createdObjective","_asymmetricInstallationCountOverrides","_asymmetricInstallationOverrideSource"];
 
                                 _id = format["OPCOM_%1_objective_%2",_opcomID,_foreachIndex];
                                 _pos = _x select 0;
@@ -2353,8 +2698,18 @@ switch(_operation) do {
                                 _opcom_state = "unassigned";
                                 _clusterID = _x select 5;
                                 _opcomID = _x select 6;
+                                _asymmetricInstallationCountOverrides = _x select 7;
+                                _asymmetricInstallationOverrideSource = _x select 8;
 
-                                [_logic,"addObjective",[_id,_pos,_size,_type,_priority,_opcom_state,_clusterID,_opcomID]] call ALiVE_fnc_OPCOM;
+                                _createdObjective = [_logic,"addObjective",[_id,_pos,_size,_type,_priority,_opcom_state,_clusterID,_opcomID]] call ALiVE_fnc_OPCOM;
+
+                                if ([_asymmetricInstallationCountOverrides] call ALIVE_fnc_isHash && {count (_asymmetricInstallationCountOverrides select 1) > 0}) then {
+                                    [_createdObjective,"asymmetricInstallationCountOverrides",_asymmetricInstallationCountOverrides] call ALiVE_fnc_HashSet;
+                                };
+
+                                if (_asymmetricInstallationOverrideSource != "") then {
+                                    [_createdObjective,"asymmetricInstallationOverrideSource",_asymmetricInstallationOverrideSource] call ALiVE_fnc_HashSet;
+                                };
                      } foreach _objectives_unsorted;
 
                      [_logic,"sortObjectives",_typeOp] call ALiVE_fnc_OPCOM;

@@ -1,0 +1,25 @@
+ALiVE Javen Fork
+Branch Notes - add-opcom-task-profile-overrides
+
+Summary
+This branch adds mission-maker control over how many profiles OPCOM commits to tasks and which profile categories those tasks are allowed to draw from, while preserving existing behavior by default.
+
+Changes
+- Added OPCOM module setting `taskProfileCountOverrides` for per-task profile count overrides.
+- Added OPCOM module setting `taskProfileTypeOverrides` for per-task profile category overrides.
+- Wired conventional TACOM attack, defend, and reserve section sizing to the new override system.
+- Wired conventional task section selection to respect overridden profile categories instead of always using the default infantry/motorized/mechanized/armored mix.
+- Wired asymmetric action selection to respect per-action profile count and type overrides for tasks such as assault, ambush, retreat, terrorize, factory, sabotage, ied, suicide, depot, roadblocks, and recruit.
+- Added fallback support so recon and capture can inherit attack overrides for conventional OPCOM behavior.
+- Hardened free-form override parsing so malformed syntax, non-string task keys, and invalid type tokens are ignored safely instead of aborting OPCOM startup or creating broken empty type overrides.
+- Added focused tests covering normal parsing, fallback behavior, malformed keys, malformed syntax, and invalid type token handling.
+
+Impact
+- Mission makers can make invasion, occupation, and asymmetric commanders commit more or fewer groups to specific tasks without editing SQF.
+- Mission makers can restrict specific tasks to chosen force types, such as using only infantry for ambushes or prioritizing mechanized/armored units for attacks.
+- Existing missions retain current OPCOM behavior unless the new override fields are populated.
+- Typoed or malformed override text now falls back safely to defaults instead of breaking task assignment.
+
+Examples
+- `taskProfileCountOverrides = [["attack",6],["reserve",0],["ambush",1]]`
+- `taskProfileTypeOverrides = [["attack",["mechanized","armored"]],["ambush",["infantry"]]]`
