@@ -289,7 +289,7 @@ switch(_operation) do {
                             _obj = [_mod,"objectives",objNull,[]] call ALIVE_fnc_OOsimpleOperation;
                             _objectives = _objectives + _obj;
 
-                            {_collection pushback [([_x,"center"] call ALiVE_fnc_HashGet), ([_x,"size"] call ALiVE_fnc_HashGet)]} foreach _objectives;
+                            {_collection pushback [([_x,"center"] call ALiVE_fnc_HashGet), ([_x,"size"] call ALiVE_fnc_HashGet)]} foreach _obj;
 
                             ["CQB Houses loaded from MIL/CIV Placement module!"] call ALiVE_fnc_dump;
                         };
