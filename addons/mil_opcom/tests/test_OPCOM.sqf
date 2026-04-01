@@ -44,11 +44,16 @@ private _typeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[""attack"
 private _malformedOverrideHandler = [] call ALIVE_fnc_hashCreate;
 private _malformedCountOverrides = [objNull, "parseTaskProfileCountOverrides", "[[123,2],[""attack"",5]]"] call MAINCLASS;
 private _malformedTypeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[123,[""air""]],[""attack"",[""mechanized""]]]"] call MAINCLASS;
+private _syntaxErrorOverrideHandler = [] call ALIVE_fnc_hashCreate;
+private _syntaxErrorCountOverrides = [objNull, "parseTaskProfileCountOverrides", "[[""attack"",6]"] call MAINCLASS;
+private _syntaxErrorTypeOverrides = [objNull, "parseTaskProfileTypeOverrides", "[[""attack"",[""mechanized""]]" ] call MAINCLASS;
 
 [_overrideHandler, "taskProfileCountOverrides", _countOverrides] call ALIVE_fnc_hashSet;
 [_overrideHandler, "taskProfileTypeOverrides", _typeOverrides] call ALIVE_fnc_hashSet;
 [_malformedOverrideHandler, "taskProfileCountOverrides", _malformedCountOverrides] call ALIVE_fnc_hashSet;
 [_malformedOverrideHandler, "taskProfileTypeOverrides", _malformedTypeOverrides] call ALIVE_fnc_hashSet;
+[_syntaxErrorOverrideHandler, "taskProfileCountOverrides", _syntaxErrorCountOverrides] call ALIVE_fnc_hashSet;
+[_syntaxErrorOverrideHandler, "taskProfileTypeOverrides", _syntaxErrorTypeOverrides] call ALIVE_fnc_hashSet;
 
 _err = "Attack count override parse failed";
 ASSERT_TRUE(([_overrideHandler, "getTaskProfileCount", ["attack", 4]] call MAINCLASS) == 6, _err);
@@ -73,6 +78,12 @@ ASSERT_TRUE(([_malformedOverrideHandler, "getTaskProfileCount", ["attack", 4]] c
 
 _err = "Malformed type override entries should be ignored safely";
 ASSERT_TRUE(([_malformedOverrideHandler, "getTaskProfileTypes", ["attack", ["infantry"]]] call MAINCLASS) isEqualTo ["mechanized"], _err);
+
+_err = "Syntax errors in count overrides should fall back safely";
+ASSERT_TRUE(([_syntaxErrorOverrideHandler, "getTaskProfileCount", ["attack", 4]] call MAINCLASS) == 4, _err);
+
+_err = "Syntax errors in type overrides should fall back safely";
+ASSERT_TRUE(([_syntaxErrorOverrideHandler, "getTaskProfileTypes", ["attack", ["infantry"]]] call MAINCLASS) isEqualTo ["infantry"], _err);
 
 STAT("Creating Virtual AI System...");
 

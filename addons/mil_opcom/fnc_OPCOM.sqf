@@ -1698,7 +1698,14 @@ switch(_operation) do {
                     _result = _overrides;
                 };
 
-                _entries = call compile _entries;
+                private _parseFailed = isNil {
+                    _entries = call compile _entries;
+                    false
+                };
+
+                if (_parseFailed) exitWith {
+                    _result = _overrides;
+                };
             };
 
             if !(_entries isEqualType []) exitWith {
@@ -1733,7 +1740,14 @@ switch(_operation) do {
                     _result = _overrides;
                 };
 
-                _entries = call compile _entries;
+                private _parseFailed = isNil {
+                    _entries = call compile _entries;
+                    false
+                };
+
+                if (_parseFailed) exitWith {
+                    _result = _overrides;
+                };
             };
 
             if !(_entries isEqualType []) exitWith {
