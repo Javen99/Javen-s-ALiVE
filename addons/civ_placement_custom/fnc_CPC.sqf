@@ -246,7 +246,6 @@ switch (_operation) do {
                     [_logic, "placement"] call MAINCLASS;
                 } else {
                     if (_roadBlocks > 0) then {
-                        private _queuedRoadblocks = 0;
                         private _restoredRoadblocks = 0;
                         private _savedRoadblockLocations = if (isNil "ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS") then {[]} else {+ALIVE_CIV_PLACEMENT_ROADBLOCK_LOCATIONS};
 
@@ -254,20 +253,15 @@ switch (_operation) do {
                             private _center = [_x, "center"] call ALIVE_fnc_hashGet;
                             private _clusterSize = [_x, "size"] call ALIVE_fnc_hashGet;
                             private _roadblockLocation = [_center, _clusterSize];
-                            private _wasSaved = (_savedRoadblockLocations findIf {_x isEqualTo _roadblockLocation}) >= 0;
 
-                            if ((_wasSaved || {random 100 < _roadBlocks}) && {(GVAR(ROADBLOCK_LOCATIONS) findIf {_x isEqualTo _roadblockLocation}) < 0}) then {
+                            if ((_savedRoadblockLocations findIf {_x isEqualTo _roadblockLocation}) >= 0 && {(GVAR(ROADBLOCK_LOCATIONS) findIf {_x isEqualTo _roadblockLocation}) < 0}) then {
                                 GVAR(ROADBLOCK_LOCATIONS) pushBack _roadblockLocation;
-                                if (_wasSaved) then {
-                                    _restoredRoadblocks = _restoredRoadblocks + 1;
-                                } else {
-                                    _queuedRoadblocks = _queuedRoadblocks + 1;
-                                };
+                                _restoredRoadblocks = _restoredRoadblocks + 1;
                             };
                         } forEach ([_logic, "objectives"] call MAINCLASS);
 
                         if (_debug) then {
-                            ["CPC - Restored %1 and recomputed %2 deferred roadblock locations for persistent load", _restoredRoadblocks, _queuedRoadblocks] call ALiVE_fnc_dump;
+                            ["CPC - Restored %1 deferred roadblock locations for persistent load", _restoredRoadblocks] call ALiVE_fnc_dump;
                         };
                     };
 
