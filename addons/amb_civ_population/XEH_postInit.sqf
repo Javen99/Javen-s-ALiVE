@@ -1,11 +1,9 @@
 #include "script_component.hpp"
 
-// Wait for the Civilian Population module to publish all Advanced Civilian
-// globals before doing anything. On the server the module init runs before
-// postInit so this resolves immediately. On clients it blocks until the
-// server broadcasts the publicVariable calls.
-if (isNil "ALiVE_advciv_enabled") then {
-    waitUntil { !isNil "ALiVE_advciv_enabled" };
+// Safety check: if ALiVE_advciv_enabled doesn't exist yet, exit gracefully
+// This can happen if XEH_postInit runs before the Civilian Population module initializes
+if (isNil "ALiVE_advciv_enabled") exitWith {
+    ["ALiVE Advanced Civilians - ALiVE_advciv_enabled not yet initialized, skipping postInit"] call ALIVE_fnc_dump;
 };
 
 ["ALiVE Advanced Civilians - postInit starting | ALiVE_advciv_enabled = %1", ALiVE_advciv_enabled] call ALIVE_fnc_dump;
@@ -187,27 +185,27 @@ if (isServer) then {
 //  CLIENT INITIALIZATION
 // ==============================================
 if (hasInterface) then {
-    // Globals are already guaranteed by the waitUntil at the top of this file.
-    // Additionally wait for the utility functions to arrive, since publicVariable
-    // for code blocks may land slightly after the scalar globals on a loaded server.
-    waitUntil { !isNil "ALiVE_fnc_advciv_isValidCiv" };
-
-    // Add order menus to existing civilians
-    {
-        if ([_x] call ALiVE_fnc_advciv_isValidCiv) then {
-            [_x] call ALiVE_fnc_advciv_orderMenu;
-        };
-    } forEach allUnits;
-
-    // Auto-add order menus to new civilians
-    ["CAManBase", "initPost", {
-        params ["_unit"];
-        [{
-            if ([_this select 0] call ALiVE_fnc_advciv_isValidCiv) then {
-                [_this select 0] call ALiVE_fnc_advciv_orderMenu;
+    // Use CBA_fnc_waitUntilAndExecute instead of waitUntil to avoid suspending errors
+    [{
+        !isNil "ALiVE_fnc_advciv_isValidCiv"
+    }, {
+        // Add order menus to existing civilians
+        {
+            if ([_x] call ALiVE_fnc_advciv_isValidCiv) then {
+                [_x] call ALiVE_fnc_advciv_orderMenu;
             };
-        }, [_unit], 1.5] call CBA_fnc_waitAndExecute;
-    }, true] call CBA_fnc_addClassEventHandler;
+        } forEach allUnits;
+
+        // Auto-add order menus to new civilians
+        ["CAManBase", "initPost", {
+            params ["_unit"];
+            [{
+                if ([_this select 0] call ALiVE_fnc_advciv_isValidCiv) then {
+                    [_this select 0] call ALiVE_fnc_advciv_orderMenu;
+                };
+            }, [_unit], 1.5] call CBA_fnc_waitAndExecute;
+        }, true] call CBA_fnc_addClassEventHandler;
+    }, []] call CBA_fnc_waitUntilAndExecute;
 
     // Debug 3D labels
     if (ALiVE_advciv_debug) then {
