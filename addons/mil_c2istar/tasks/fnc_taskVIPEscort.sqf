@@ -341,6 +341,12 @@ switch (_taskState) do {
         _pickupChat set [0, _pickupMessage];
         [_dialog, "chat_start", _pickupChat] call ALIVE_fnc_hashSet;
 
+        private _pickupFailChat = +([_dialog, "chat_failed"] call ALIVE_fnc_hashGet);
+        private _pickupFailMessage = +(_pickupFailChat select 0);
+        _pickupFailMessage set [1, format [_pickupFailMessage select 1, _sourceTown]];
+        _pickupFailChat set [0, _pickupFailMessage];
+        [_dialog, "chat_failed", _pickupFailChat] call ALIVE_fnc_hashSet;
+
         _dialog = [_dialogOption, "Escort"] call ALIVE_fnc_hashGet;
         private _escortChat = +([_dialog, "chat_start"] call ALIVE_fnc_hashGet);
         private _escortMessage = +(_escortChat select 0);
@@ -366,6 +372,12 @@ switch (_taskState) do {
         _returnSuccessMessage set [1, format [_returnSuccessMessage select 1, _sourceTown]];
         _returnSuccessChat set [0, _returnSuccessMessage];
         [_dialog, "chat_success", _returnSuccessChat] call ALIVE_fnc_hashSet;
+
+        private _returnFailChat = +([_dialog, "chat_failed"] call ALIVE_fnc_hashGet);
+        private _returnFailMessage = +(_returnFailChat select 0);
+        _returnFailMessage set [1, format [_returnFailMessage select 1, _sourceTown]];
+        _returnFailChat set [0, _returnFailMessage];
+        [_dialog, "chat_failed", _returnFailChat] call ALIVE_fnc_hashSet;
 
         private _taskParams = [] call ALIVE_fnc_hashCreate;
         [_taskParams, "nextTask", _taskIDs select 1] call ALIVE_fnc_hashSet;
