@@ -104,8 +104,8 @@ switch (_taskState) do {
         [
             _aidCrate,
             "Open Clinic",
-            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_connect_ca.paa",
-            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_connect_ca.paa",
+            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_reviveMedic_ca.paa",
+            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_reviveMedic_ca.paa",
             format ["_this distance2D _target < 4 && !(_target getVariable ['%1', false])", _completionVar],
             "_caller distance2D _target < 4",
             {},
