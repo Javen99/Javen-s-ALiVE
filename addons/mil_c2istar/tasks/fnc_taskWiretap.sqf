@@ -271,8 +271,8 @@ switch (_taskState) do {
         [
             _targetBuilding,
             "Setup Wiretap",
-            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_unbind_ca.paa",
-            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_unbind_ca.paa",
+            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_loaddevice_ca.paa",
+            "\a3\ui_f\data\IGUI\Cfg\holdactions\holdAction_loaddevice_ca.paa",
             "_this distance2D _target < 3 && !(_target getvariable ['ALiVE_Task_Wiretapped',false]) && ('Item_Toolkit' in (items _this + assignedItems _this + backpackItems _this) || 'vn_b_item_wiretap' in (items _this + assignedItems _this + backpackItems _this) || 'SPE_ToolKit' in (items _this + assignedItems _this + backpackItems _this) || 'ToolKit' in (items _this + assignedItems _this + backpackItems _this))",
             "_caller distance2D _target < 3",
             {},

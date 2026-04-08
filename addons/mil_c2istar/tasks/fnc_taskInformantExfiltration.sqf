@@ -259,8 +259,8 @@ switch (_taskState) do {
         [
             _vip,
             "Secure Informant",
-            "\a3\missions_f_oldman\data\img\holdactions\holdAction_talk_ca.paa",
-            "\a3\missions_f_oldman\data\img\holdactions\holdAction_talk_ca.paa",
+            "\a3\missions_f_oldman\data\img\holdactions\holdAction_follow_start_ca.paa",
+            "\a3\missions_f_oldman\data\img\holdactions\holdAction_follow_start_ca.paa",
             "_this distance2D _target < 3 && !(_target getVariable ['ALIVE_Task_VIPPicked', false])",
             "_caller distance2D _target < 3",
             {},
