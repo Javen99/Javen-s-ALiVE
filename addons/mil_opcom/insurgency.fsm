@@ -285,8 +285,8 @@ class FSM
                          "_clusterHostility = ["""",[],[],""""];" \n
                          "_clusterCasualties = ["""",[],[],""""];" \n
                          "" \n
-                         "// Compile unique objective local variable for pending profiles (_pending_objective_3456) that can be accessed from outside with setfsmvariable" \n
-                         "_var = format[""_pending_%1"",_id]; if (isnil {call compile _var}) then {_OPCOM_FSM setFSMvariable [_var,[]]}; " \n
+                         "// Create a unique FSM variable key for pending profiles and avoid compiling objective IDs as SQF." \n
+                         "_var = format[""_pending_%1"",_id]; if (isnil {_OPCOM_FSM getFSMvariable _var}) then {_OPCOM_FSM setFSMvariable [_var,[]]}; " \n
                          "" \n
                          "// default section size determined by objective size" \n
                          "_sizeSection = ceil(_size/150);" \n
