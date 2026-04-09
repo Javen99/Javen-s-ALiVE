@@ -516,8 +516,10 @@ ALiVE_fnc_INS_factory = {
                 _allSides = ["EAST","WEST","GUER"];
                 _objective = [[],"getobjectivebyid",_id] call ALiVE_fnc_OPCOM;
 
-                // Convert to data that can be persistet
-                _factory = [[],"convertObject",_factory] call ALiVE_fnc_OPCOM;
+                // Startup can hand us either a persisted [pos, class] ref or the live building object.
+                if !(_factory isEqualType objNull) then {
+                    _factory = [[],"convertObject",_factory] call ALiVE_fnc_OPCOM;
+                };
 
                 // Convert CQB modules
                 {_CQB set [_foreachIndex,[[],"convertObject",_x] call ALiVE_fnc_OPCOM]} foreach _CQB;
@@ -904,8 +906,10 @@ ALiVE_fnc_INS_depot = {
                 // Store center position
                 _center = _pos;
 
-                // Convert to data that can be persistet
-                _depot = [[],"convertObject",_depot] call ALiVE_fnc_OPCOM;
+                // Startup can hand us either a persisted [pos, class] ref or the live building object.
+                if !(_depot isEqualType objNull) then {
+                    _depot = [[],"convertObject",_depot] call ALiVE_fnc_OPCOM;
+                };
 
                 // Convert CQB modules
                 {_CQB set [_foreachIndex,[[],"convertObject",_x] call ALiVE_fnc_OPCOM]} foreach _CQB;
@@ -983,8 +987,10 @@ ALiVE_fnc_INS_recruit = {
                 // Store center position
                 _center = _pos;
 
-                // Convert to data that can be persistet
-                _HQ = [[],"convertObject",_HQ] call ALiVE_fnc_OPCOM;
+                // Startup can hand us either a persisted [pos, class] ref or the live building object.
+                if !(_HQ isEqualType objNull) then {
+                    _HQ = [[],"convertObject",_HQ] call ALiVE_fnc_OPCOM;
+                };
 
                 // Convert CQB modules
                 {_CQB set [_foreachIndex,[[],"convertObject",_x] call ALiVE_fnc_OPCOM]} foreach _CQB;

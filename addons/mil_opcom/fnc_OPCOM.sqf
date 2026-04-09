@@ -362,7 +362,7 @@ switch(_operation) do {
 
                         //Iterate through all synchronized modules
                         for "_i" from 0 to ((count synchronizedObjects _logic)-1) do {
-                            private ["_obj","_mod","_size","_type","_priority"];
+                            private ["_obj","_mod","_size","_objectiveType","_priority"];
 
                             _mod = (synchronizedObjects _logic) select _i;
 
@@ -394,13 +394,13 @@ switch(_operation) do {
                                     _priority = _mod getvariable ["priority",200];
 
                                     //Get type of location-logic from config
-                                    _type = getText(configfile >> "CfgVehicles" >> (typeOf _mod) >> "displayName");
+                                    _objectiveType = getText(configfile >> "CfgVehicles" >> (typeOf _mod) >> "displayName");
 
                                     //Create #Hash objective for this location
                                     _obj = [nil, "createhashobject"] call ALIVE_fnc_OPCOM;
                                     [_obj,"center",getposATL _mod] call ALiVE_fnc_HashSet;
                                     [_obj,"size",_size] call ALiVE_fnc_hashSet;
-                                    [_obj,"objectiveType",_type] call ALiVE_fnc_hashSet;
+                                    [_obj,"objectiveType",_objectiveType] call ALiVE_fnc_hashSet;
                                     [_obj,"priority",_priority] call ALiVE_fnc_hashSet;
                                     [_obj,"clusterID",""] call ALiVE_fnc_hashSet;
 
